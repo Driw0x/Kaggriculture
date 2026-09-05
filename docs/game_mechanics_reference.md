@@ -56,6 +56,21 @@ Care banks a bonus for the next scheduled production.
 * If the animal is not fed on its production day, the base unit is produced but the accumulated bonus is lost.
 * Production remains limited by `max_held`.
 
+### Observed Care Bonus Anomaly
+
+An unexplained behavior has been observed with the **Goose** when optimizing `CARE` actions.
+
+In the tested scenario, the Goose is placed on day 1, fed every day, and harvested on day 5:
+
+| Scenario | Day 4 | Observed Day 6 Production |
+| -------- | ----- | -------------------------: |
+| Continuous care | `CARE` | 2 Eggs |
+| Care skipped on day 4 | No `CARE` | 1 Egg |
+
+This behavior appears inconsistent with the documented care rule. According to the rule, the accumulated `pending_care_bonus` should be consumed on the next scheduled production and then reset to 0. Since a Goose produces every day after its first yield, a day-4 care bonus should not apparently survive an intermediate production to affect day 6.
+
+The exact cause is currently unknown. Possible explanations include the ordering of the end-of-day refresh, production, care-bonus accumulation and reset, or a day-indexing/timing effect in the environment. Until the behavior is fully explained, care optimization based only on `pending_care_bonus` and `max_held` should be considered unsafe.
+
 ### Fertilizer Production
 
 Every surviving animal makes **1 fertilizer available per day**.

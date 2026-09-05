@@ -156,6 +156,8 @@ def get_crop_actions(pos):
 
 def animal_needs_care(pos):
     data = ANIMAL_STATE[pos]
+    if data["animal"] == "GOOSE":
+        return True
     return data["pending_care_bonus"] + 1 < ANIMAL_MAX_HELD[data["animal"]]
 
 def get_animal_actions(obs, pos):
