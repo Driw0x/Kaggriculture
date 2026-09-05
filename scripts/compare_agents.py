@@ -1,7 +1,7 @@
 from kaggle_environments import make
 
-from src.agent1 import agent as agent1
-from src.agent2 import agent as agent2
+from src.agents.agent1 import agent as agent1
+from src.agents.agent2 import agent as agent2
 
 AGENT1_NAME = "agent1"
 AGENT2_NAME = "agent2"
