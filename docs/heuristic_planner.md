@@ -488,7 +488,148 @@ This removes the previous logic tied specifically to the second `NE`
 quadrant and allows the same purchase mechanism to handle the second,
 third and fourth quadrants.
 
-## 11. Version summary
+
+## 11. CHI 9 --- Dynamic production, labor and endgame optimization
+
+CHI 9 extends the heuristic planner with a more dynamic economic and
+endgame strategy.
+
+### Dynamic worker-count calculation
+
+The number of hired farm hands is no longer based only on whether the
+daily task set fits within worker capacity.
+
+The planner first searches for the minimum valid workforce, then checks
+whether hiring one additional worker creates enough extra expected
+production value to justify the next hiring cost.
+
+Additional hiring stops when:
+
+``` text
+additional expected profit < next hire cost
+```
+
+This allows the planner to avoid both under-hiring and unnecessary
+workers when the extra capacity would not pay for itself.
+
+### Conditional crop watering
+
+Crops are no longer watered automatically every day.
+
+The planner tracks:
+
+``` text
+watered_today
+consecutive_unwatered
+needs_water
+```
+
+and only creates a WATER action when watering is required for crop
+survival or when a harvest-ready crop still needs watering before its
+harvest action.
+
+This removes unnecessary WATER actions and reduces daily route cost.
+
+### Endgame planting constraints
+
+Planting and replanting decisions now use the crop production schedule
+together with the current day.
+
+A crop is only planted if its first harvest can still occur before the
+last useful harvest day:
+
+``` text
+planting day + first harvest age <= last harvest day
+```
+
+The same principle is applied to new animals using their first
+production age.
+
+Production that cannot generate a harvest in time for the final sale is
+therefore excluded from:
+
+-   new planting;
+-   replanting;
+-   animal placement;
+-   production scoring;
+-   market purchase orders.
+
+### Dynamic production purchasing
+
+The previous fixed post-opening production strategy is replaced by a
+budget-aware production selection system.
+
+For available or soon-to-be-empty tiles, the planner evaluates possible
+crops and animals using:
+
+-   expected marginal market revenue;
+-   production purchase cost;
+-   expected animal feed cost;
+-   additional labor cost;
+-   tile occupation time;
+-   effective space usage.
+
+Candidates are scored using marginal profit per effective occupied space
+and time.
+
+Only positive and affordable production choices are retained.
+
+The resulting plan is then converted into the required market orders for
+seeds, animals and Wheat.
+
+### Land-purchase profitability
+
+Land expansion is also evaluated using projected production.
+
+Before purchasing a new quadrant, the planner estimates:
+
+-   production that can still be installed on the new land;
+-   expected marginal profit;
+-   resulting worker requirements;
+-   seed, animal and feed costs;
+-   extra hiring cost.
+
+The purchase is only kept when the projected production remains
+affordable and sufficiently profitable relative to the land price.
+
+The 4000-cost final expansion is also disabled after day 19.
+
+### Continuous sales
+
+From day 6 onward, harvested non-Wheat products can be sold directly from
+the shed instead of waiting for a single later liquidation.
+
+The daily sale set includes:
+
+``` text
+CARROT
+TOMATO
+STRAWBERRY
+MELON
+EGG
+MILK
+WOOL
+```
+
+Fertilizer remains independently sellable.
+
+### Final liquidation
+
+On day 29, workers start returning toward the shed-access center before
+the final market liquidation.
+
+From hour 22 onward, every remaining sellable product in the shed is
+submitted to the market:
+
+``` text
+SELL all remaining market products
+```
+
+This ensures that products still held near the end of the match are
+converted into money before the game finishes.
+
+## 12. Version summary
+
 
   -----------------------------------------------------------------------
   Version                             Main improvement
@@ -522,4 +663,9 @@ third and fourth quadrants.
                                       starts, no-replant expansion mode,
                                       weed clearing and generalized land
                                       purchases
+
+  `chi9.py`                           Dynamic production purchasing,
+                                      profit-aware hiring, conditional
+                                      watering, endgame production
+                                      cutoffs and final liquidation
   -----------------------------------------------------------------------

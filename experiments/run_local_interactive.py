@@ -9,10 +9,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from kaggle_environments import make
-import src.agents.test as chi8
+import src.agents.test as chi
 
-importlib.reload(chi8)
-agent = chi8.agent
+importlib.reload(chi)
+agent = chi.agent
 
 env = make("kaggriculture", configuration={"episodeSteps": 720}, debug=True)
 env.run([agent, "random"])
