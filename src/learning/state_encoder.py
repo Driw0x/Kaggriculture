@@ -5,7 +5,7 @@ ANIMALS = ("GOOSE", "COW", "SHEEP")
 PRODUCTS = ("WHEAT", "CARROT", "TOMATO", "STRAWBERRY", "MELON", "EGG", "MILK", "WOOL", "FERTILIZER")
 SHED_ITEMS = PRODUCTS + ANIMALS
 QUADRANTS = ("NW", "NE", "SW", "SE")
-SHOPS = ("BAKERY", "PIZZA", "BRUNCH", "YARN", "ICE_CREAM", "PET_CAFE", "SMOOTHIE", "FARMERS_MARKET")
+SHOPS = ("BAKERY", "PIZZA_SHOP", "BRUNCH_SPOT", "YARN_STORE", "ICE_CREAM_SHOP", "PET_CAFE", "SMOOTHIE_SHOP", "FARMERS_MARKET")
 
 BASE_PRICES = {
     "WHEAT": 25,
@@ -32,14 +32,7 @@ def _inventory_total(inventories, item):
 
 
 def feature_names():
-    names = [
-        "day",
-        "hour",
-        "money_log",
-        "hires_today",
-        "hands",
-    ]
-
+    names = ["day", "hour", "money_log", "hires_today", "hands"]
     names += [f"quadrant_{q}" for q in QUADRANTS]
     names += [f"shed_{item}" for item in SHED_ITEMS]
     names += [f"seed_{crop}" for crop in CROPS]
@@ -74,19 +67,15 @@ def feature_names():
 def encode_state(observation):
     player = observation["player"]
     farm = observation["farms"][player]
-
     private = observation.get("private", {})
     shed = private.get("shed", {})
     seeds = private.get("seeds", {})
     inventories = private.get("inventories", [])
-
     market = observation.get("market", {})
     market_inventory = market.get("inventory", {})
     market_prices = market.get("prices", {})
-
     unlocked_quadrants = set(farm.get("unlocked_quadrants", []))
     unlocked_shops = set(observation.get("town", {}).get("unlocked_shops", []))
-
     day = observation.get("day", 0)
     tiles = list(_tiles(farm))
 
@@ -94,49 +83,40 @@ def encode_state(observation):
         day / 29.0,
         observation.get("hour", 0) / 23.0,
         math.log1p(max(0, farm.get("money", 0))),
-        farm.get("hires_today", 0),
-        len(farm.get("hands", [])),
+        math.log1p(max(0, farm.get("hires_today", 0))),
+        math.log1p(len(farm.get("hands", []))),
     ]
 
     features += [float(q in unlocked_quadrants) for q in QUADRANTS]
-    features += [shed.get(item, 0) for item in SHED_ITEMS]
-    features += [seeds.get(crop, 0) for crop in CROPS]
-    features += [_inventory_total(inventories, item) for item in PRODUCTS]
-
-    features += [
-        (market_inventory.get(item, 10000) - 10000) / 1000.0
-        for item in PRODUCTS
-    ]
-
-    features += [
-        market_prices.get(item, BASE_PRICES[item]) / BASE_PRICES[item]
-        for item in PRODUCTS
-    ]
-
+    features += [math.log1p(max(0, shed.get(item, 0))) for item in SHED_ITEMS]
+    features += [math.log1p(max(0, seeds.get(crop, 0))) for crop in CROPS]
+    features += [math.log1p(max(0, _inventory_total(inventories, item))) for item in PRODUCTS]
+    features += [(market_inventory.get(item, 10000) - 10000) / 1000.0 for item in PRODUCTS]
+    features += [market_prices.get(item, BASE_PRICES[item]) / BASE_PRICES[item] for item in PRODUCTS]
     features += [float(shop in unlocked_shops) for shop in SHOPS]
 
     for crop in CROPS:
-        crop_tiles = [tile for tile in tiles if tile.get("plant") == crop]
+        crop_tiles = [tile for tile in tiles if tile.get("crop") == crop]
 
         features += [
-            len(crop_tiles),
-            sum(tile.get("yield_units", 0) for tile in crop_tiles),
-            sum(tile.get("consecutive_unwatered", 0) >= 1 for tile in crop_tiles),
-            sum(bool(tile.get("watered_today")) for tile in crop_tiles),
-            sum(tile.get("fertilized_until_day", -1) >= day for tile in crop_tiles),
+            math.log1p(len(crop_tiles)),
+            math.log1p(sum(tile.get("yield_units", 0) for tile in crop_tiles)),
+            math.log1p(sum(tile.get("consecutive_unwatered", 0) >= 1 for tile in crop_tiles)),
+            math.log1p(sum(bool(tile.get("watered_today")) for tile in crop_tiles)),
+            math.log1p(sum(tile.get("fertilized_until_day", -1) >= day for tile in crop_tiles)),
         ]
 
     for animal in ANIMALS:
         animal_tiles = [tile for tile in tiles if tile.get("animal") == animal]
 
         features += [
-            len(animal_tiles),
-            sum(tile.get("yield_units", 0) for tile in animal_tiles),
-            sum(tile.get("consecutive_unfed", 0) >= 1 for tile in animal_tiles),
-            sum(bool(tile.get("fed_today")) for tile in animal_tiles),
-            sum(bool(tile.get("cared_today")) for tile in animal_tiles),
-            sum(bool(tile.get("fertilizer_available")) for tile in animal_tiles),
-            sum(tile.get("pending_care_bonus", 0) for tile in animal_tiles),
+            math.log1p(len(animal_tiles)),
+            math.log1p(sum(tile.get("yield_units", 0) for tile in animal_tiles)),
+            math.log1p(sum(tile.get("consecutive_unfed", 0) >= 1 for tile in animal_tiles)),
+            math.log1p(sum(bool(tile.get("fed_today")) for tile in animal_tiles)),
+            math.log1p(sum(bool(tile.get("cared_today")) for tile in animal_tiles)),
+            math.log1p(sum(bool(tile.get("fertilizer_available")) for tile in animal_tiles)),
+            math.log1p(sum(tile.get("pending_care_bonus", 0) for tile in animal_tiles)),
         ]
 
     return [float(value) for value in features]
