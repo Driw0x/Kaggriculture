@@ -6,3 +6,4 @@ __pycache__/
 .idea/
 .vscode/
 *.json
+data/expert_replays/*.json
