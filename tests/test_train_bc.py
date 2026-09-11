@@ -1,23 +1,26 @@
 import torch
-from torch import nn
 
 from scripts.train_bc import compute_losses, masked_smooth_l1
 
 
 def test_masked_smooth_l1():
-    prediction = torch.tensor([[1.0, 10.0]])
-    target = torch.tensor([[2.0, 0.0]])
-    mask = torch.tensor([[1.0, 0.0]])
+    prediction = torch.tensor([[1.0, 5.0], [3.0, 4.0]], requires_grad=True)
+    target = torch.tensor([[1.5, 0.0], [0.0, 5.0]])
+    mask = torch.tensor([[1.0, 0.0], [0.0, 1.0]])
 
     loss = masked_smooth_l1(prediction, target, mask)
 
-    assert loss.item() == 0.5
+    assert loss.item() > 0
+
+    loss.backward()
+
+    assert prediction.grad is not None
 
 
 def test_masked_smooth_l1_empty():
-    prediction = torch.tensor([[1.0, 2.0]], requires_grad=True)
-    target = torch.zeros_like(prediction)
-    mask = torch.zeros_like(prediction)
+    prediction = torch.randn(2, 3, requires_grad=True)
+    target = torch.zeros(2, 3)
+    mask = torch.zeros(2, 3)
 
     loss = masked_smooth_l1(prediction, target, mask)
 
@@ -60,14 +63,14 @@ def test_compute_losses():
         ]),
     }
 
-    hire_loss_fn = nn.CrossEntropyLoss()
-    occurrence_loss_fn = nn.BCEWithLogitsLoss()
+    hire_weights = torch.ones(11)
+    occurrence_pos_weight = torch.ones(3)
 
     losses = compute_losses(
         output,
         batch,
-        hire_loss_fn,
-        occurrence_loss_fn,
+        hire_weights,
+        occurrence_pos_weight,
     )
 
     assert set(losses) == {
@@ -78,6 +81,6 @@ def test_compute_losses():
         "sell",
     }
 
-    assert all(torch.isfinite(loss) for loss in losses.values())
+    assert losses["total"].item() > 0
 
     losses["total"].backward()

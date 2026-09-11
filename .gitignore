@@ -6,5 +6,6 @@ __pycache__/
 .idea/
 .vscode/
 *.json
+!models/bc_thresholds.json
 data/expert_replays/*.json
-models/*.pt
+*.pt
