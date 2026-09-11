@@ -577,6 +577,48 @@ Only positive and affordable production choices are retained.
 The resulting plan is then converted into the required market orders for
 seeds, animals and Wheat.
 
+### Opponent production forecast
+
+CHI 9 also incorporates visible opponent production into its market
+forecast.
+
+The planner scans the other farms and estimates the supply that their
+currently visible crops and animals can add over the evaluated horizon.
+
+For visible crops, expected supply is approximated from their average
+daily production rate.
+
+For visible animals, the forecast includes:
+
+``` text
+animal product
++
+fertilizer
+```
+
+This opponent supply is added to the projected market inventory before
+estimating future prices.
+
+The forecast is used when evaluating:
+
+-   marginal production revenue;
+-   task expected value;
+-   expected route profit;
+-   production choices that depend on those values.
+
+The resulting price model therefore considers:
+
+``` text
+current market inventory
++ own expected supply
++ visible opponent expected supply
+- future shop consumption
+```
+
+This remains a deterministic estimate based only on production visible
+in the current observation. Hidden future purchases, placements and
+strategy changes by the opponent are not predicted.
+
 ### Land-purchase profitability
 
 Land expansion is also evaluated using projected production.
@@ -665,6 +707,7 @@ converted into money before the game finishes.
                                       purchases
 
   `chi9.py`                           Dynamic production purchasing,
+                                      opponent production forecasting,
                                       profit-aware hiring, conditional
                                       watering, endgame production
                                       cutoffs and final liquidation

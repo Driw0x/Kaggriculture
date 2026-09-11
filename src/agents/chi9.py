@@ -558,14 +558,15 @@ DAY_1_PATHS = {
 
 HAND_SPAWNS_DAY0 = [(5, 4), (4, 5), (5, 5), (4, 4)]
 HAND_SPAWNS = [(4, 4), (5, 4), (4, 5), (5, 5)]
-FARMER_CAPACITY = 23
-HAND_CAPACITY = 22
+FARMER_CAPACITY = 24
+HAND_CAPACITY = 23
 CENTER = (4, 4)
 SHED_TILES = ((4, 4), (5, 4), (4, 5), (5, 5))
 WORKER_ROUTES = {}
 WORKER_STATE = {}
 CURRENT_DAY = -1
 HIRE_COUNT = 4
+WORKER_HIRE_TICKS = {}
 ROUTES_REBUILT_DAY = -1
 REAL_WORKER_STARTS = {}
 EXPANSION_ACTIVE = False
@@ -698,7 +699,7 @@ def plan_land_before_pathing(obs, reserved_cost, feed_units, wheat_available):
 
 def reset_worker_state(worker_count):
     global WORKER_STATE
-    WORKER_STATE = {i: {"path": 0, "stack": [], "done": set(), "target": 0, "pickup_done": False, "animal_pickups": [], "animal_pickups_initialized": False, "active_task": False} for i in range(worker_count)}
+    WORKER_STATE = {i: {"path": 0, "stack": [], "done": set(), "target": 0, "pickup_done": False, "pickup_pending": False, "animal_pickups": [], "animal_pickups_initialized": False, "active_task": False} for i in range(worker_count)}
     WORKER_STATE[0]["setup"] = 0
 
 def get_worker_position(obs, worker_id):
@@ -718,7 +719,10 @@ def get_worker_spawn(worker_id):
     return spawns[(worker_id - 1) % len(spawns)]
 
 def get_worker_capacity(worker_id):
-    return FARMER_CAPACITY if worker_id == 0 else HAND_CAPACITY
+    if worker_id == 0:
+        return FARMER_CAPACITY
+    hire_tick = WORKER_HIRE_TICKS.get(worker_id, 0)
+    return max(0, TURNS_PER_DAY - (hire_tick + 1))
 
 def get_path_action(plan, state):
     if state["path"] >= len(plan):
@@ -786,7 +790,16 @@ def crop_needs_harvest_water(pos):
     return data.get("planted", False) and not data.get("watered_today", False) and data.get("harvest", False) and not data.get("needs_water", False)
 
 def crop_needs_water(pos):
-    return crop_needs_survival_water(pos) or crop_needs_harvest_water(pos)
+    data = CROP_STATE[pos]
+    if crop_needs_survival_water(pos) or crop_needs_harvest_water(pos):
+        return True
+    if not data.get("planted", False) or data.get("watered_today", False):
+        return False
+    production = CROP_PRODUCTION[data["crop"]]
+    if production["type"] != "ONE_TIME":
+        return False
+    age = data.get("age", 0)
+    return production["bonus_start_age"] <= age <= production["harvest_ages"][0]
 
 def get_crop_actions(pos):
     data = CROP_STATE[pos]
@@ -1104,6 +1117,44 @@ def get_feed_count(route):
                 count += 1
     return count
 
+def get_worker_wheat(obs, worker_id):
+    inventories = obs.get("private", {}).get("inventories", [])
+    if worker_id >= len(inventories):
+        return 0
+    return inventories[worker_id].get("WHEAT", 0)
+
+def task_is_sacrificable(task, required_installs=None):
+    required_installs = required_installs or set()
+    if task[0] == "WEED":
+        return True
+    if task[0] == "INSTALL":
+        return task[1] not in required_installs
+    if task[0] != "CROP":
+        return False
+    data = CROP_STATE.get(task[1])
+    if not data or data.get("harvest", False):
+        return False
+    return data.get("weed", False) or not data.get("planted", False)
+
+def protect_critical_capacity(routes, required_installs=None):
+    required_installs = required_installs or set()
+    protected = {worker_id: route.copy() for worker_id, route in routes.items()}
+    for worker_id, route in protected.items():
+        if not any(task_is_critical(task) for task in route):
+            continue
+        capacity = get_worker_capacity(worker_id)
+        while route_cost(worker_id, route) > capacity:
+            removed = False
+            for index in range(len(route) - 1, -1, -1):
+                if task_is_sacrificable(route[index], required_installs):
+                    route.pop(index)
+                    route[:] = order_tasks(get_worker_spawn(worker_id), route)
+                    removed = True
+                    break
+            if not removed:
+                break
+    return protected
+
 def get_animal_pickups(route):
     pickups = {}
     for task in route:
@@ -1203,7 +1254,7 @@ def assign_normal_routes(obs, hire_count, include_animals=True, required_install
     tasks.sort(key=lambda task: (distance(CENTER, task[1]), -get_task_profitability(obs, task), -get_task_expected_value(obs, task), task[1][1], task[1][0]))
     for task in tasks:
         add_task_to_routes(routes, task)
-    return routes
+    return protect_critical_capacity(routes, required_installs)
 
 def assign_routes(obs, hire_count, required_installs=None):
     return assign_normal_routes(obs, hire_count, include_animals=True, required_installs=required_installs)
@@ -1275,6 +1326,13 @@ def get_general_worker_action(obs, worker_id):
         return ["PASS"]
 
     if state["stack"]:
+        action = state["stack"][-1]
+        if action[0] == "FEED" and get_worker_wheat(obs, worker_id) <= 0:
+            state["stack"].clear()
+            state["active_task"] = False
+            state["pickup_done"] = False
+            state["pickup_pending"] = False
+            return ["PASS"]
         return state["stack"].pop()
 
     complete_active_task(state)
@@ -1293,13 +1351,21 @@ def get_general_worker_action(obs, worker_id):
 
     if not state["pickup_done"] and get_feed_count(route) and not route_has_wait(route):
         feed_count = get_feed_count(route)
-        if obs["private"]["shed"].get("WHEAT", 0) < feed_count:
-            return ["PASS"]
-        state["pickup_done"] = True
-        return ["PICKUP", "WHEAT", feed_count]
+        worker_wheat = get_worker_wheat(obs, worker_id)
+        missing_wheat = max(0, feed_count - worker_wheat)
+        if missing_wheat == 0:
+            state["pickup_done"] = True
+            state["pickup_pending"] = False
+        else:
+            if obs["private"]["shed"].get("WHEAT", 0) < missing_wheat:
+                state["pickup_pending"] = False
+                return ["PASS"]
+            state["pickup_pending"] = True
+            return ["PICKUP", "WHEAT", missing_wheat]
 
     if not get_feed_count(route):
         state["pickup_done"] = True
+        state["pickup_pending"] = False
 
     if state["target"] >= len(route):
         return ["PASS"]
@@ -1423,26 +1489,76 @@ def get_unified_wheat_order(obs, install_orders):
     missing = max(0, needed - get_total_wheat_available(obs))
     return [["BUY_PRODUCT", "WHEAT", missing]] if missing > 0 else []
 
+def get_worker_market_orders(obs, worker_id, seed_stock, animal_stock, wheat_stock):
+    route = WORKER_ROUTES.get(worker_id, [])
+    seeds = {}
+    for task in route:
+        seed = get_task_required_seed(task)
+        if seed:
+            seeds[seed] = seeds.get(seed, 0) + 1
+    animals = get_animal_pickups(route)
+    orders = []
+    for seed, needed in seeds.items():
+        available = seed_stock.get(seed, 0)
+        bought = max(0, needed - available)
+        seed_stock[seed] = max(0, available - needed)
+        if bought:
+            orders.append(["BUY_SEED", seed, bought])
+    for animal, needed in animals.items():
+        available = animal_stock.get(animal, 0)
+        bought = max(0, needed - available)
+        animal_stock[animal] = max(0, available - needed)
+        if bought:
+            orders.append(["BUY_ANIMAL", animal, bought])
+    feed_needed = get_feed_count(route)
+    bought_wheat = max(0, feed_needed - wheat_stock[0])
+    wheat_stock[0] = max(0, wheat_stock[0] - feed_needed)
+    if bought_wheat:
+        orders.append(["BUY_PRODUCT", "WHEAT", bought_wheat])
+    return consolidate_market_orders(orders)
+
+def append_market_group(batches, group):
+    group = filter_endgame_market_orders(CURRENT_OBS, consolidate_market_orders(group))
+    if not group:
+        return
+    if len(group) > MAX_MARKET_ORDERS:
+        raise ValueError("A worker market group exceeds the per-tick market limit")
+    if not batches or len(batches[-1]) + len(group) > MAX_MARKET_ORDERS:
+        batches.append([])
+    batches[-1].extend(group)
+
 def build_daily_market_queue(obs):
-    install_orders = get_install_market_orders(obs)
-    install_orders = [order for order in install_orders if not (order[0] == "BUY_PRODUCT" and order[1] == "WHEAT")]
-    orders = [["HIRE"] for _ in range(HIRE_COUNT)]
-    orders += install_orders
-    orders += get_unified_wheat_order(obs, install_orders)
-    orders = consolidate_market_orders(orders)
+    global WORKER_HIRE_TICKS
+    seed_stock = dict(obs.get("private", {}).get("seeds", {}))
+    animal_stock = {animal: obs.get("private", {}).get("shed", {}).get(animal, 0) for animal in ANIMAL_PRODUCTION}
+    wheat_stock = [obs.get("private", {}).get("shed", {}).get("WHEAT", 0)]
+    batches = []
+    WORKER_HIRE_TICKS = {}
+    farmer_orders = get_worker_market_orders(obs, 0, seed_stock, animal_stock, wheat_stock)
+    append_market_group(batches, farmer_orders)
+    for worker_id in range(1, HIRE_COUNT + 1):
+        worker_orders = get_worker_market_orders(obs, worker_id, seed_stock, animal_stock, wheat_stock)
+        group = [["HIRE"]] + worker_orders
+        if len(group) > MAX_MARKET_ORDERS:
+            raise ValueError("A worker market group exceeds the per-tick market limit")
+        hire_tick = len(batches) - 1 if batches and len(batches[-1]) + len(group) <= MAX_MARKET_ORDERS else len(batches)
+        append_market_group(batches, group)
+        WORKER_HIRE_TICKS[worker_id] = hire_tick
     if LAND_BUY_PLANNED:
         cost = get_next_land_cost(obs)
-        planned_spend = get_market_orders_cost(obs, [order for order in orders if order[0] != "HIRE"], HIRE_COUNT)
+        all_orders = [order for batch in batches for order in batch if order[0] != "HIRE"]
+        planned_spend = get_market_orders_cost(obs, all_orders, HIRE_COUNT)
         if cost is not None and obs["farms"][obs["player"]].get("money", 0) - planned_spend >= cost:
-            orders.append(["BUY_LAND"])
-    return filter_endgame_market_orders(obs, orders)
+            append_market_group(batches, [["BUY_LAND"]])
+    return batches
 
 def has_pending_market_order(kind, product=None):
-    for order in PENDING_MARKET_ORDERS:
-        if order[0] != kind:
-            continue
-        if product is None or len(order) > 1 and order[1] == product:
-            return True
+    for batch in PENDING_MARKET_ORDERS:
+        for order in batch:
+            if order[0] != kind:
+                continue
+            if product is None or len(order) > 1 and order[1] == product:
+                return True
     return False
 
 def get_task_required_seed(task):
@@ -1508,7 +1624,7 @@ def filter_endgame_market_orders(obs, orders):
     return filtered
 
 def agent(obs):
-    global CURRENT_DAY, WORKER_ROUTES, HIRE_COUNT, ROUTES_REBUILT_DAY, REAL_WORKER_STARTS, EXPANSION_ACTIVE, CURRENT_OBS, LAND_BUY_PLANNED, PENDING_MARKET_ORDERS
+    global CURRENT_DAY, WORKER_ROUTES, HIRE_COUNT, WORKER_HIRE_TICKS, ROUTES_REBUILT_DAY, REAL_WORKER_STARTS, EXPANSION_ACTIVE, CURRENT_OBS, LAND_BUY_PLANNED, PENDING_MARKET_ORDERS
     day = obs.get("day", 0)
     hour = obs.get("hour", 0)
     farm = obs["farms"][obs["player"]]
@@ -1523,6 +1639,7 @@ def agent(obs):
     if day != CURRENT_DAY:
         CURRENT_DAY = day
         REAL_WORKER_STARTS = {0: tuple(farm["farmer"])}
+        WORKER_HIRE_TICKS = {}
         PENDING_MARKET_ORDERS = []
         if day == 0:
             HIRE_COUNT = 4
@@ -1539,7 +1656,22 @@ def agent(obs):
             else:
                 HIRE_COUNT, WORKER_ROUTES = result
             reset_worker_state(HIRE_COUNT + 1)
-            PENDING_MARKET_ORDERS = build_daily_market_queue(obs)
+            for _ in range(5):
+                previous_hires = HIRE_COUNT
+                previous_ticks = WORKER_HIRE_TICKS.copy()
+                PENDING_MARKET_ORDERS = build_daily_market_queue(obs)
+                result = calculate_daily_paths(obs)
+                if result is None:
+                    HIRE_COUNT = 0
+                    WORKER_ROUTES = {0: []}
+                    WORKER_HIRE_TICKS = {}
+                    PENDING_MARKET_ORDERS = build_daily_market_queue(obs)
+                    break
+                HIRE_COUNT, WORKER_ROUTES = result
+                reset_worker_state(HIRE_COUNT + 1)
+                PENDING_MARKET_ORDERS = build_daily_market_queue(obs)
+                if HIRE_COUNT == previous_hires and WORKER_HIRE_TICKS == previous_ticks:
+                    break
 
     if day > 0 and hour == 1 and ROUTES_REBUILT_DAY != day:
         REAL_WORKER_STARTS = {0: tuple(farm["farmer"])}
@@ -1569,8 +1701,7 @@ def agent(obs):
     if final_liquidation:
         market = final_liquidation[:MAX_MARKET_ORDERS]
     else:
-        market = PENDING_MARKET_ORDERS[:MAX_MARKET_ORDERS]
-        del PENDING_MARKET_ORDERS[:len(market)]
+        market = PENDING_MARKET_ORDERS.pop(0) if PENDING_MARKET_ORDERS else []
         sale_slots = MAX_MARKET_ORDERS - len(market)
         if sale_slots > 0:
             sale_orders = consolidate_market_orders(get_daily_harvest_sale_orders(obs) + get_sale_orders(obs))
