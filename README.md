@@ -13,16 +13,19 @@ iteratively improve an agent for the competition.
 
 ## Repository Map
 
-  Path                 Purpose
-  -------------------- ------------------------------------------------
-  `src/agents/`        Agent implementations
-  `src/interactive/`   Interactive game interface and action recorder
-  `scripts/`           Local evaluation and utility scripts
-  `experiments/`       Experiment results and strategy comparisons
-  `submissions/`       Agents submitted to Kaggle
-  `docs/`              Game rules and agent development documentation
-  `requirements.txt`   Python dependencies
-  `LICENSE`            Apache License 2.0
+| Path | Purpose |
+| --- | --- |
+| `src/agents/` | Agent implementations |
+| `src/learning/` | Behavioral cloning models, datasets, encoders and policies |
+| `scripts/` | Training, evaluation and utility scripts |
+| `experiments/` | Experiment results and strategy comparisons |
+| `submissions/` | Agents submitted to Kaggle |
+| `data/` | Replay data and processed learning datasets |
+| `models/` | Trained model checkpoints and inference configuration |
+| `tests/` | Automated tests |
+| `docs/` | Game rules and agent development documentation |
+| `requirements.txt` | Python dependencies |
+| `LICENSE` | Apache License 2.0 |
 
 ## Setup
 
