@@ -7,3 +7,4 @@ __pycache__/
 .vscode/
 *.json
 data/expert_replays/*.json
+models/*.pt
