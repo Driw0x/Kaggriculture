@@ -28,40 +28,43 @@ iteratively improve an agent for the competition.
 
 Clone the repository:
 
-``` bash
+```bash
 git clone https://github.com/Driw0x/kaggriculture.git
 cd kaggriculture
 ```
 
 Create a virtual environment:
 
-``` bash
+```bash
 python -m venv .venv
 ```
 
 Activate it on Windows:
 
-``` powershell
+```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
 Install the dependencies:
 
-``` bash
+```bash
 pip install -r requirements.txt
 ```
 
 ## Documentation
 
--   [`docs/game_rules.md`](docs/game_rules.md) --- Complete game rules
-    and mechanics
--   [`docs/getting_started.md`](docs/getting_started.md) --- Agent
-    development, local testing, and Kaggle submission guide
--   [`docs/game_mechanics_reference.md`](docs/game_mechanics_reference.md)
-    --- Reference for core game mechanics, production, animals, farm
-    infrastructure, workers, town shops, and market behavior.
--   [`docs/heuristic_planner.md`](docs/heuristic_planner.md) ---
-    Heuristic planner strategy and iteration history.
+- [`docs/game_rules.md`](docs/game_rules.md) --- Complete game rules
+  and mechanics
+- [`docs/getting_started.md`](docs/getting_started.md) --- Agent
+  development, local testing, and Kaggle submission guide
+- [`docs/game_mechanics_reference.md`](docs/game_mechanics_reference.md)
+  --- Reference for core game mechanics, production, animals, farm
+  infrastructure, workers, town shops, and market behavior.
+- [`docs/heuristic_planner.md`](docs/heuristic_planner.md) ---
+  Heuristic planner strategy and iteration history.
+- [`docs/learning_agent.md`](docs/learning_agent.md) ---
+  Learning-based agent architecture, expert replay dataset, imitation
+  learning, and reinforcement learning roadmap.
 
 ## License
 
