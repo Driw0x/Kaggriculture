@@ -1296,56 +1296,318 @@ def task_is_critical(task):
         return animal_maintenance_active(task[1])
     return False
 
-def add_task_to_routes(routes, task):
-    best = None
-    for worker_id in routes:
-        current = order_tasks(get_worker_spawn(worker_id), routes[worker_id])
-        current_cost = route_cost(worker_id, current)
-        candidate = order_tasks(get_worker_spawn(worker_id), routes[worker_id] + [task])
-        cost = route_cost(worker_id, candidate)
-        capacity = get_worker_capacity(worker_id)
-        if cost > capacity:
+# --- Experimental Hungarian route assignment ---------------------------------
+# The production/economic planner is unchanged.  Only worker <-> task assignment
+# is changed from sequential greedy insertion to global minimum-cost matching
+# rounds.  A pure-Python Hungarian implementation is used so the Kaggle agent
+# does not depend on scipy.
+
+HUNGARIAN_INF = 10 ** 9
+
+def hungarian_min_assignment(cost_matrix):
+    """Return [(row, col), ...] minimizing total cost for rows <= columns.
+
+    This is the O(n^3) Hungarian algorithm with potentials.  Every row is
+    assigned exactly once.  Costs must be finite numbers; infeasible edges use
+    HUNGARIAN_INF and are filtered by the caller.
+    """
+    if not cost_matrix:
+        return []
+    n = len(cost_matrix)
+    m = len(cost_matrix[0])
+    if n > m:
+        raise ValueError("hungarian_min_assignment requires rows <= columns")
+
+    u = [0.0] * (n + 1)
+    v = [0.0] * (m + 1)
+    p = [0] * (m + 1)
+    way = [0] * (m + 1)
+
+    for i in range(1, n + 1):
+        p[0] = i
+        j0 = 0
+        minv = [float("inf")] * (m + 1)
+        used = [False] * (m + 1)
+
+        while True:
+            used[j0] = True
+            i0 = p[j0]
+            delta = float("inf")
+            j1 = 0
+
+            for j in range(1, m + 1):
+                if used[j]:
+                    continue
+                cur = cost_matrix[i0 - 1][j - 1] - u[i0] - v[j]
+                if cur < minv[j]:
+                    minv[j] = cur
+                    way[j] = j0
+                if minv[j] < delta:
+                    delta = minv[j]
+                    j1 = j
+
+            if delta == float("inf"):
+                break
+
+            for j in range(m + 1):
+                if used[j]:
+                    u[p[j]] += delta
+                    v[j] -= delta
+                else:
+                    minv[j] -= delta
+
+            j0 = j1
+            if p[j0] == 0:
+                break
+
+        while True:
+            j1 = way[j0]
+            p[j0] = p[j1]
+            j0 = j1
+            if j0 == 0:
+                break
+
+    result = []
+    for j in range(1, m + 1):
+        if p[j] != 0:
+            result.append((p[j] - 1, j - 1))
+    return result
+
+
+def get_task_route_candidate(routes, worker_id, task):
+    """Return (incremental_cost, total_cost, route) or None if infeasible."""
+    start = get_worker_spawn(worker_id)
+    current = order_tasks(start, routes[worker_id])
+    current_cost = route_cost(worker_id, current)
+
+    candidate = order_tasks(start, routes[worker_id] + [task])
+    total_cost = route_cost(worker_id, candidate)
+    capacity = get_worker_capacity(worker_id)
+    if total_cost > capacity:
+        return None
+
+    return total_cost - current_cost, total_cost, candidate
+
+
+def hungarian_match_round(routes, tasks):
+    """Globally match at most one remaining task to each worker.
+
+    Returns a list of (task_index, worker_id, candidate_route).  The matrix cost
+    is the marginal route cost.  Small deterministic tie-break terms prefer
+    lower total route cost, then lower worker id.
+    """
+    if not routes or not tasks:
+        return []
+
+    workers = sorted(routes)
+    candidates = {}
+
+    # If tasks <= workers, tasks are rows so every task gets a chance to match.
+    if len(tasks) <= len(workers):
+        matrix = []
+        for ti, task in enumerate(tasks):
+            row = []
+            for wi, worker_id in enumerate(workers):
+                candidate = get_task_route_candidate(routes, worker_id, task)
+                if candidate is None:
+                    row.append(HUNGARIAN_INF)
+                    continue
+                incremental, total, route = candidate
+                candidates[(ti, worker_id)] = route
+                row.append(incremental * 10000 + total * 10 + worker_id)
+            matrix.append(row)
+
+        matches = []
+        for ti, wi in hungarian_min_assignment(matrix):
+            worker_id = workers[wi]
+            if matrix[ti][wi] >= HUNGARIAN_INF:
+                continue
+            matches.append((ti, worker_id, candidates[(ti, worker_id)]))
+        return matches
+
+    # More tasks than workers: workers are rows; every worker can receive at
+    # most one task in this round.
+    matrix = []
+    for wi, worker_id in enumerate(workers):
+        row = []
+        for ti, task in enumerate(tasks):
+            candidate = get_task_route_candidate(routes, worker_id, task)
+            if candidate is None:
+                row.append(HUNGARIAN_INF)
+                continue
+            incremental, total, route = candidate
+            candidates[(ti, worker_id)] = route
+            # ti is only a deterministic tie-break. Task priority is handled by
+            # tiering/chunking before this function.
+            row.append(incremental * 10000 + total * 10 + ti)
+        matrix.append(row)
+
+    matches = []
+    for wi, ti in hungarian_min_assignment(matrix):
+        worker_id = workers[wi]
+        if matrix[wi][ti] >= HUNGARIAN_INF:
             continue
-        incremental = cost - current_cost
-        score = (incremental, cost, -capacity + cost, worker_id)
-        if best is None or score < best[0]:
-            best = (score, worker_id, candidate)
-    if best is None:
+        matches.append((ti, worker_id, candidates[(ti, worker_id)]))
+    return matches
+
+
+def assign_tasks_hungarian(routes, tasks, require_all=False):
+    """Assign a task list through repeated global matching rounds.
+
+    Tasks that cannot fit are left unassigned.  For mandatory tiers,
+    require_all=True makes the whole assignment fail if any task cannot fit.
+    """
+    remaining = list(tasks)
+
+    while remaining:
+        matches = hungarian_match_round(routes, remaining)
+        if not matches:
+            break
+
+        # Apply simultaneously computed worker assignments.
+        matched_indices = set()
+        for task_index, worker_id, candidate_route in matches:
+            routes[worker_id] = candidate_route
+            matched_indices.add(task_index)
+
+        remaining = [
+            task for index, task in enumerate(remaining)
+            if index not in matched_indices
+        ]
+
+    if require_all and remaining:
         return False
-    _, worker_id, candidate = best
-    routes[worker_id] = candidate
     return True
+
+
+def add_task_to_routes(routes, task):
+    """Compatibility helper: one-task Hungarian assignment."""
+    return assign_tasks_hungarian(routes, [task], require_all=True)
+
+
+def critical_task_tier(task):
+    """Hard deadline tiers; Hungarian optimizes assignment inside each tier."""
+    if task[0] == "CROP_WATER":
+        return 0 if crop_needs_survival_water(task[1]) else 3
+
+    if task[0] == "ANIMAL":
+        data = ANIMAL_STATE[task[1]]
+        urgent_feed = (
+            data.get("placed", False)
+            and data.get("consecutive_unfed", 0) >= 1
+            and animal_needs_daily_feed(task[1])
+        )
+        if urgent_feed:
+            return 0
+        if data.get("harvest", False):
+            return 1
+        return 2
+
+    # Required installs remain mandatory but come after existing production.
+    return 4
+
 
 def assign_normal_routes(obs, hire_count, include_animals=True, required_installs=None):
     required_installs = required_installs or set()
     worker_count = hire_count + 1
     routes = {worker_id: [] for worker_id in range(worker_count)}
-    animal_tasks = [("ANIMAL", pos) for pos in ANIMAL_STATE if animal_action_cost(pos) > 0] if include_animals else []
-    water_tasks = [("CROP_WATER", pos) for pos, data in CROP_STATE.items() if data.get("planted", False) and crop_has_future_sale(pos) and crop_needs_water(pos)]
-    install_tasks = [("INSTALL", pos) for pos, data in NEW_PRODUCTION_STATE.items() if data.get("next_prod") and task_action_cost(("INSTALL", pos)) > 0]
-    required_install_tasks = [task for task in install_tasks if task[1] in required_installs]
-    critical = water_tasks + [task for task in animal_tasks if task_is_critical(task)] + required_install_tasks
-    def critical_priority(task):
-        if task[0] == "CROP_WATER":
-            return (0 if crop_needs_survival_water(task[1]) else 3, -distance(CENTER, task[1]), task[1][1], task[1][0])
-        if task[0] == "ANIMAL":
-            data = ANIMAL_STATE[task[1]]
-            urgent_feed = data.get("placed", False) and data.get("consecutive_unfed", 0) >= 1
-            return (0 if urgent_feed else 1 if data.get("harvest", False) else 2, -distance(CENTER, task[1]), task[1][1], task[1][0])
-        return (4, -distance(CENTER, task[1]), task[1][1], task[1][0])
-    critical.sort(key=critical_priority)
-    for task in critical:
-        if not add_task_to_routes(routes, task):
+
+    animal_tasks = [
+        ("ANIMAL", pos)
+        for pos in ANIMAL_STATE
+        if animal_action_cost(pos) > 0
+    ] if include_animals else []
+
+    water_tasks = [
+        ("CROP_WATER", pos)
+        for pos, data in CROP_STATE.items()
+        if data.get("planted", False)
+        and crop_has_future_sale(pos)
+        and crop_needs_water(pos)
+    ]
+
+    install_tasks = [
+        ("INSTALL", pos)
+        for pos, data in NEW_PRODUCTION_STATE.items()
+        if data.get("next_prod")
+        and task_action_cost(("INSTALL", pos)) > 0
+    ]
+
+    required_install_tasks = [
+        task for task in install_tasks if task[1] in required_installs
+    ]
+
+    critical = (
+        water_tasks
+        + [task for task in animal_tasks if task_is_critical(task)]
+        + required_install_tasks
+    )
+
+    # Preserve hard urgency semantics, but globally optimize worker assignment
+    # inside each deadline tier.
+    for tier in range(5):
+        tier_tasks = [task for task in critical if critical_task_tier(task) == tier]
+        if tier_tasks and not assign_tasks_hungarian(
+            routes, tier_tasks, require_all=True
+        ):
             return None
-    crop_tasks = [("CROP", pos) for pos, data in CROP_STATE.items() if (data["planted"] or data.get("weed", False) or not EXPANSION_ACTIVE) and max(0, crop_action_cost(pos) - int(crop_needs_water(pos))) > 0]
-    crop_positions = {task[1] for task in crop_tasks} | {task[1] for task in install_tasks}
-    weed_tasks = [task for task in get_weed_tasks(obs) if task[1] not in crop_positions]
+
+    crop_tasks = [
+        ("CROP", pos)
+        for pos, data in CROP_STATE.items()
+        if (
+            data["planted"]
+            or data.get("weed", False)
+            or not EXPANSION_ACTIVE
+        )
+        and max(
+            0,
+            crop_action_cost(pos) - int(crop_needs_water(pos))
+        ) > 0
+    ]
+
+    crop_positions = (
+        {task[1] for task in crop_tasks}
+        | {task[1] for task in install_tasks}
+    )
+    weed_tasks = [
+        task for task in get_weed_tasks(obs)
+        if task[1] not in crop_positions
+    ]
+
     critical_set = set(critical)
-    tasks = crop_tasks + [task for task in install_tasks if task not in critical_set] + weed_tasks + [task for task in animal_tasks if task not in critical_set]
-    tasks.sort(key=lambda task: (distance(CENTER, task[1]), -get_task_profitability(obs, task), -get_task_expected_value(obs, task), task[1][1], task[1][0]))
-    for task in tasks:
-        add_task_to_routes(routes, task)
+    tasks = (
+        crop_tasks
+        + [task for task in install_tasks if task not in critical_set]
+        + weed_tasks
+        + [task for task in animal_tasks if task not in critical_set]
+    )
+
+    # Keep chi9's economic/task ordering for task selection. Hungarian replaces
+    # only the worker assignment, which makes this branch directly comparable
+    # with the greedy baseline.
+    tasks.sort(
+        key=lambda task: (
+            distance(CENTER, task[1]),
+            -get_task_profitability(obs, task),
+            -get_task_expected_value(obs, task),
+            task[1][1],
+            task[1][0],
+        )
+    )
+
+    # Process one worker-sized priority window at a time. This preserves the
+    # original optional-task preference while optimizing assignments globally.
+    window = max(1, worker_count)
+    for start_index in range(0, len(tasks), window):
+        assign_tasks_hungarian(
+            routes,
+            tasks[start_index:start_index + window],
+            require_all=False,
+        )
+
     return protect_critical_capacity(routes, required_installs)
+
 
 def assign_routes(obs, hire_count, required_installs=None):
     return assign_normal_routes(obs, hire_count, include_animals=True, required_installs=required_installs)
@@ -1355,19 +1617,36 @@ def assign_maintenance_routes(obs, hire_count):
     worker_count = hire_count + 1
     routes = {worker_id: [] for worker_id in range(worker_count)}
     tasks = []
+
     for pos, data in CROP_STATE.items():
-        if data.get("planted", False) and crop_has_future_sale(pos) and crop_needs_survival_water(pos):
+        if (
+            data.get("planted", False)
+            and crop_has_future_sale(pos)
+            and crop_needs_survival_water(pos)
+        ):
             tasks.append(("CROP_WATER", pos))
+
     for pos, data in ANIMAL_STATE.items():
         if not data.get("placed", False) or not animal_maintenance_active(pos):
             continue
-        if data.get("consecutive_unfed", 0) >= 1 or data.get("harvest", False) or animal_needs_daily_feed(pos):
+        if (
+            data.get("consecutive_unfed", 0) >= 1
+            or data.get("harvest", False)
+            or animal_needs_daily_feed(pos)
+        ):
             tasks.append(("ANIMAL", pos))
-    tasks.sort(key=lambda task: (0 if task[0] == "CROP_WATER" else 1, -distance(CENTER, task[1]), task[1][1], task[1][0]))
-    for task in tasks:
-        if not add_task_to_routes(routes, task):
+
+    # Maintenance is mandatory. Use urgency tiers first, Hungarian inside each
+    # tier, and fail if any mandatory task cannot fit.
+    for tier in range(4):
+        tier_tasks = [task for task in tasks if critical_task_tier(task) == tier]
+        if tier_tasks and not assign_tasks_hungarian(
+            routes, tier_tasks, require_all=True
+        ):
             return None
+
     return routes
+
 
 def calculate_maintenance_paths(obs, max_hires=None):
     max_hires = len(HIRE_COSTS) if max_hires is None else min(max_hires, len(HIRE_COSTS))

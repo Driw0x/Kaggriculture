@@ -43,7 +43,7 @@ DAILY_SALE_START_DAY = 6
 DAILY_SALE_PRODUCTS = ["CARROT", "TOMATO", "STRAWBERRY", "MELON", "EGG", "MILK", "WOOL"]
 LAST_SELL_DAY = 29
 LAST_HARVEST_DAY = LAST_SELL_DAY - 1
-HIRE_COSTS = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
+HIRE_COSTS = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584, 4181, 6765, 10946, 17711, 28657, 46368]
 PRODUCTION_COSTS = {"WHEAT": 10, "CARROT": 20, "TOMATO": 50, "STRAWBERRY": 100, "MELON": 80, "GOOSE": 300, "COW": 400, "SHEEP": 500}
 EFFECTIVE_SPACE = {"WHEAT": 1, "CARROT": 1, "TOMATO": 1, "STRAWBERRY": 1, "MELON": 1, "GOOSE": 5 / 3, "COW": 5 / 3, "SHEEP": 5 / 3}
 CROP_EXPECTED_YIELD = {"WHEAT": 4, "CARROT": 3, "TOMATO": 4, "STRAWBERRY": 4, "MELON": 6}
@@ -152,6 +152,12 @@ def make_crop_state(crop):
 def make_animal_state(animal):
     return {"animal": animal, "placed": False, "harvest": False, "fertilizer": False, "pending_care_bonus": 0, "consecutive_unfed": 0, "will_be_empty": False, "next_prod": None}
 
+def nearest_shed_tile(pos):
+    return min(SHED_TILES, key=lambda tile: (distance(pos, tile), tile[1], tile[0]))
+
+def distance_to_shed(pos):
+    return min(distance(pos, tile) for tile in SHED_TILES)
+
 def distance_to_center(pos):
     return min(abs(pos[0] - x) + abs(pos[1] - y) for x, y in SHED_TILES)
 
@@ -165,16 +171,16 @@ def sync_production_tiles(obs):
                 NEW_PRODUCTION_STATE.pop(pos, None)
                 continue
             if isinstance(tile, dict) and tile.get("kind") == "PLANT":
-                if pos not in CROP_STATE:
-                    CROP_STATE[pos] = make_crop_state(tile["crop"])
-                CROP_STATE[pos]["crop"] = tile["crop"]
+                crop = tile["crop"]
+                if pos not in CROP_STATE or CROP_STATE[pos].get("crop") != crop:
+                    CROP_STATE[pos] = make_crop_state(crop)
                 ANIMAL_STATE.pop(pos, None)
                 NEW_PRODUCTION_STATE.pop(pos, None)
                 continue
             if isinstance(tile, dict) and tile.get("kind") in ("COOP", "PASTURE") and tile.get("animal"):
-                if pos not in ANIMAL_STATE:
-                    ANIMAL_STATE[pos] = make_animal_state(tile["animal"])
-                ANIMAL_STATE[pos]["animal"] = tile["animal"]
+                animal = tile["animal"]
+                if pos not in ANIMAL_STATE or ANIMAL_STATE[pos].get("animal") != animal:
+                    ANIMAL_STATE[pos] = make_animal_state(animal)
                 CROP_STATE.pop(pos, None)
                 NEW_PRODUCTION_STATE.pop(pos, None)
                 continue
@@ -243,56 +249,131 @@ def get_candidate_install_actions(obs, prod, pos):
     build = not isinstance(tile, dict) or tile.get("kind") != kind
     return int(weed) + 3 + int(build)
 
+def get_remaining_crop_harvests(prod, day=None):
+    day = CURRENT_DAY if day is None else day
+    return [age for age in CROP_PRODUCTION[prod]["harvest_ages"] if day + age <= LAST_HARVEST_DAY]
+
+def get_animal_production_days(prod, day=None):
+    day = CURRENT_DAY if day is None else day
+    spec = ANIMAL_PRODUCTION[prod]
+    first = day + spec["first_yield_age"]
+    if first > LAST_HARVEST_DAY:
+        return []
+    days = []
+    d = first
+    while d <= LAST_HARVEST_DAY:
+        days.append(d)
+        d += spec["interval"]
+    return days
+
+def get_animal_expected_product_units(prod, day=None):
+    """Conservative CARE-aware production estimate for a newly installed animal.
+
+    Daily FEED+CARE is already planned by this agent. The first production can bank
+    care over the setup interval; later productions bank over the production interval.
+    Each event is capped by max_held.
+    """
+    days = get_animal_production_days(prod, day)
+    if not days:
+        return 0
+    spec = ANIMAL_PRODUCTION[prod]
+    cap = ANIMAL_MAX_HELD[prod]
+    units = 0
+    for i, _ in enumerate(days):
+        bank_days = spec["first_yield_age"] if i == 0 else spec["interval"]
+        units += min(cap, 1 + bank_days)
+    return units
+
 def get_candidate_occupation_time(prod, day=None):
     day = CURRENT_DAY if day is None else day
     if prod in CROP_PRODUCTION:
-        production = CROP_PRODUCTION[prod]
-        return production["harvest_ages"][0] if production["type"] == "ONE_TIME" else production["harvest_ages"][-1]
-    first = ANIMAL_PRODUCTION[prod]["first_yield_age"]
-    return max(first, LAST_HARVEST_DAY - day + 1)
+        harvests = get_remaining_crop_harvests(prod, day)
+        return harvests[-1] if harvests else 0
+    days = get_animal_production_days(prod, day)
+    return days[-1] - day + 1 if days else 0
 
 def get_candidate_production(prod, day=None):
     day = CURRENT_DAY if day is None else day
     if prod in CROP_PRODUCTION:
-        return {prod: CROP_EXPECTED_YIELD[prod]}
-    production = ANIMAL_PRODUCTION[prod]
-    first_day = day + production["first_yield_age"]
-    if first_day > LAST_HARVEST_DAY:
+        harvests = get_remaining_crop_harvests(prod, day)
+        if not harvests:
+            return {}
+        if CROP_PRODUCTION[prod]["type"] == "ONE_TIME":
+            return {prod: CROP_EXPECTED_YIELD[prod]}
+        return {prod: len(harvests)}
+    days = get_animal_production_days(prod, day)
+    if not days:
         return {}
-    count = 1 + (LAST_HARVEST_DAY - first_day) // production["interval"]
-    return {ANIMAL_PRODUCT[prod]: count, "FERTILIZER": max(0, LAST_HARVEST_DAY - day + 1)}
+    useful_days = days[-1] - day + 1
+    return {ANIMAL_PRODUCT[prod]: get_animal_expected_product_units(prod, day), "FERTILIZER": useful_days}
+
+def get_existing_animal_production_days(pos, day=None, horizon_day=None):
+    day = CURRENT_DAY if day is None else day
+    horizon_day = LAST_HARVEST_DAY if horizon_day is None else min(horizon_day, LAST_HARVEST_DAY)
+    data = ANIMAL_STATE[pos]
+    if not data.get("placed", False):
+        return []
+    next_day = get_next_animal_production_day(pos, day)
+    interval = ANIMAL_PRODUCTION[data["animal"]]["interval"]
+    days = []
+    while next_day <= horizon_day:
+        days.append(next_day)
+        next_day += interval
+    return days
+
+def get_existing_animal_feed_days(pos, day=None, horizon_day=None):
+    day = CURRENT_DAY if day is None else day
+    days = get_existing_animal_production_days(pos, day, horizon_day)
+    return days[-1] - day + 1 if days else 0
 
 def get_expected_farm_supply(days_ahead):
+    horizon_day = min(LAST_HARVEST_DAY, CURRENT_DAY + max(0, int(days_ahead)))
     supply = {}
     for data in CROP_STATE.values():
         if not data.get("planted", False):
+            prod = data.get("next_prod")
+            if prod in CROP_PRODUCTION:
+                for product, units in get_candidate_production(prod, CURRENT_DAY).items():
+                    occupation = max(1, get_candidate_occupation_time(prod, CURRENT_DAY))
+                    ratio = min(1, max(0, days_ahead) / occupation)
+                    supply[product] = supply.get(product, 0) + units * ratio
             continue
         crop = data["crop"]
-        units = DAILY_YIELD.get(crop, 0) * days_ahead
-        supply[crop] = supply.get(crop, 0) + units
-    for data in ANIMAL_STATE.values():
+        planted_day = data.get("planted_day")
+        if planted_day is None:
+            continue
+        spec = CROP_PRODUCTION[crop]
+        if spec["type"] == "ONE_TIME":
+            harvest_day = planted_day + spec["harvest_ages"][0]
+            if CURRENT_DAY <= harvest_day <= horizon_day:
+                supply[crop] = supply.get(crop, 0) + CROP_EXPECTED_YIELD[crop]
+        else:
+            for age in spec["harvest_ages"]:
+                event_day = planted_day + age
+                if CURRENT_DAY <= event_day <= horizon_day:
+                    supply[crop] = supply.get(crop, 0) + 1
+    for pos, data in ANIMAL_STATE.items():
         if not data.get("placed", False):
             prod = data.get("next_prod")
             if prod in ANIMAL_PRODUCTION:
                 production = get_candidate_production(prod, CURRENT_DAY)
                 occupation = max(1, get_candidate_occupation_time(prod, CURRENT_DAY))
-                ratio = min(1, days_ahead / occupation)
+                ratio = min(1, max(0, days_ahead) / occupation)
                 for product, units in production.items():
                     supply[product] = supply.get(product, 0) + units * ratio
             continue
-        product = ANIMAL_PRODUCT[data["animal"]]
-        supply[product] = supply.get(product, 0) + DAILY_YIELD[product] * days_ahead
-        supply["FERTILIZER"] = supply.get("FERTILIZER", 0) + days_ahead
-    for data in CROP_STATE.values():
-        if data.get("planted", False):
-            continue
-        prod = data.get("next_prod")
-        if prod in CROP_PRODUCTION:
-            production = get_candidate_production(prod, CURRENT_DAY)
-            occupation = max(1, get_candidate_occupation_time(prod, CURRENT_DAY))
-            ratio = min(1, days_ahead / occupation)
-            for product, units in production.items():
-                supply[product] = supply.get(product, 0) + units * ratio
+        animal = data["animal"]
+        days = get_existing_animal_production_days(pos, CURRENT_DAY, horizon_day)
+        if days:
+            spec = ANIMAL_PRODUCTION[animal]
+            cap = ANIMAL_MAX_HELD[animal]
+            # Existing animals may already have a care bank; approximate each future event
+            # with interval-sized daily CARE, capped by max_held.
+            units = sum(min(cap, 1 + spec["interval"]) for _ in days)
+            product = ANIMAL_PRODUCT[animal]
+            supply[product] = supply.get(product, 0) + units
+            useful_days = days[-1] - CURRENT_DAY + 1
+            supply["FERTILIZER"] = supply.get("FERTILIZER", 0) + useful_days
     for product, units in get_planned_dynamic_supply(days_ahead).items():
         supply[product] = supply.get(product, 0) + units
     return supply
@@ -339,20 +420,21 @@ def choose_best_production(obs, pos, valid):
     score, prod = max(scores)
     return prod if score > 0 else None
 
-def get_remaining_feed_days(day=None):
-    day = CURRENT_DAY if day is None else day
-    return max(0, LAST_HARVEST_DAY - day + 1)
-
 def get_existing_feed_units():
-    days = get_remaining_feed_days()
-    return sum(days for pos, data in ANIMAL_STATE.items() if data.get("placed", False) and animal_needs_feed_for_final_sale(pos))
+    return sum(
+        get_existing_animal_feed_days(pos)
+        for pos, data in ANIMAL_STATE.items()
+        if data.get("placed", False) and animal_needs_feed_for_final_sale(pos)
+    )
 
 def get_budget_candidate_cost(obs, prod, feed_units, wheat_available):
     cost = PRODUCTION_COSTS[prod]
     next_feed_units = feed_units
     if prod in ANIMAL_PRODUCTION:
-        next_feed_units += get_remaining_feed_days(obs.get("day", 0))
-    wheat_price = obs.get("market", {}).get("prices", {}).get("WHEAT", MARKET_PARAMS["WHEAT"]["base"] )
+        days = get_animal_production_days(prod, obs.get("day", 0))
+        if days:
+            next_feed_units += days[-1] - obs.get("day", 0) + 1
+    wheat_price = obs.get("market", {}).get("prices", {}).get("WHEAT", MARKET_PARAMS["WHEAT"]["base"])
     old_feed_cost = max(0, feed_units - wheat_available) * wheat_price
     new_feed_cost = max(0, next_feed_units - wheat_available) * wheat_price
     return cost + new_feed_cost - old_feed_cost, next_feed_units
@@ -574,18 +656,26 @@ CURRENT_OBS = None
 LAND_BUY_PLANNED = False
 PENDING_MARKET_ORDERS = []
 
+SALE_BATCH_LIMIT = {
+    "CARROT": 10, "TOMATO": 8, "STRAWBERRY": 6, "MELON": 3,
+    "EGG": 10, "MILK": 6, "WOOL": 5, "FERTILIZER": 6,
+}
+
+def get_sale_batch(product, quantity):
+    return min(quantity, SALE_BATCH_LIMIT.get(product, quantity))
+
 def get_sale_orders(obs):
     shed = obs["private"]["shed"]
     products = ["FERTILIZER"]
     if obs.get("day", 0) == SALE_DAY and obs.get("hour", 0) == SALE_HOUR:
         products += ["CARROT", "EGG", "WOOL"]
-    return [["SELL", product, shed.get(product, 0)] for product in products if shed.get(product, 0) > 0]
+    return [["SELL", product, get_sale_batch(product, shed.get(product, 0))] for product in products if shed.get(product, 0) > 0]
 
 def get_daily_harvest_sale_orders(obs):
     if obs.get("day", 0) < DAILY_SALE_START_DAY:
         return []
     shed = obs["private"]["shed"]
-    return [["SELL", product, shed.get(product, 0)] for product in DAILY_SALE_PRODUCTS if shed.get(product, 0) > 0]
+    return [["SELL", product, get_sale_batch(product, shed.get(product, 0))] for product in DAILY_SALE_PRODUCTS if shed.get(product, 0) > 0]
 
 def get_final_liquidation_orders(obs):
     if obs.get("day", 0) != LAST_SELL_DAY or obs.get("hour", 0) < 22:
@@ -774,8 +864,8 @@ def update_crop_state(obs):
         production = CROP_PRODUCTION[data["crop"]]
         if production["type"] == "ONE_TIME":
             normal_harvest = age >= production["harvest_ages"][0]
-            data["sale_early_harvest"] = data["crop"] == "CARROT" and day == SALE_DAY and age >= 2 and not normal_harvest
-            data["harvest"] = normal_harvest or data["sale_early_harvest"]
+            data["sale_early_harvest"] = False
+            data["harvest"] = normal_harvest
             data["will_be_empty"] = data["harvest"]
         else:
             data["harvest"] = age in production["harvest_ages"] or tile.get("yield_units", 0) > 0
@@ -883,16 +973,17 @@ def animal_remaining_profit(pos):
         return 0
     animal = data["animal"]
     product = ANIMAL_PRODUCT[animal]
-    next_day = get_next_animal_production_day(pos)
-    if next_day > LAST_HARVEST_DAY:
+    days = get_existing_animal_production_days(pos)
+    if not days:
         return 0
-    interval = ANIMAL_PRODUCTION[animal]["interval"]
-    harvests = 1 + (LAST_HARVEST_DAY - next_day) // interval
+    spec = ANIMAL_PRODUCTION[animal]
+    cap = ANIMAL_MAX_HELD[animal]
+    product_units = sum(min(cap, 1 + spec["interval"]) for _ in days)
     product_price = CURRENT_OBS["market"]["prices"].get(product, MARKET_PARAMS[product]["base"])
     fertilizer_price = CURRENT_OBS["market"]["prices"].get("FERTILIZER", MARKET_PARAMS["FERTILIZER"]["base"])
-    feed_days = max(0, LAST_HARVEST_DAY - CURRENT_DAY + 1)
+    feed_days = days[-1] - CURRENT_DAY + 1
     wheat_price = CURRENT_OBS["market"]["prices"].get("WHEAT", MARKET_PARAMS["WHEAT"]["base"])
-    return harvests * product_price + feed_days * fertilizer_price - feed_days * wheat_price
+    return product_units * product_price + feed_days * fertilizer_price - feed_days * wheat_price
 
 def animal_maintenance_active(pos):
     return CURRENT_DAY <= LAST_HARVEST_DAY and animal_has_future_sale(pos) and animal_remaining_profit(pos) > 0
@@ -1176,7 +1267,7 @@ def route_cost(worker_id, route):
     if get_feed_count(route) and not route_has_wait(route):
         cost += 1
     if CURRENT_DAY == SALE_DAY:
-        cost += distance(route_end(start, route), CENTER) + 1
+        cost += distance_to_shed(route_end(start, route)) + 1
     return cost
 
 def get_weed_tasks(obs):
@@ -1278,14 +1369,16 @@ def assign_maintenance_routes(obs, hire_count):
             return None
     return routes
 
-def calculate_maintenance_paths(obs, max_hires=10):
-    for hire_count in range(min(max_hires, len(HIRE_COSTS)) + 1):
+def calculate_maintenance_paths(obs, max_hires=None):
+    max_hires = len(HIRE_COSTS) if max_hires is None else min(max_hires, len(HIRE_COSTS))
+    for hire_count in range(max_hires + 1):
         routes = assign_maintenance_routes(obs, hire_count)
         if routes is not None:
             return hire_count, routes
     return None
 
-def calculate_daily_paths(obs, max_hires=10, required_installs=None, optimize_extra_hires=True):
+def calculate_daily_paths(obs, max_hires=None, required_installs=None, optimize_extra_hires=True):
+    max_hires = len(HIRE_COSTS) if max_hires is None else min(max_hires, len(HIRE_COSTS))
     hire_count = 0
     routes = None
     while hire_count <= max_hires and hire_count <= len(HIRE_COSTS):
@@ -1318,12 +1411,44 @@ def complete_active_task(state):
         state["target"] += 1
         state["active_task"] = False
 
+def inventory_item_count(inv):
+    return sum(v for k, v in inv.items() if k not in CROP_PRODUCTION) + sum(inv.get(k, 0) for k in CROP_PRODUCTION)
+
+def get_total_nonseed_stock(obs):
+    shed = obs.get("private", {}).get("shed", {})
+    total = sum(shed.values())
+    for inv in obs.get("private", {}).get("inventories", []):
+        total += sum(inv.values())
+    return total
+
+def get_emergency_drop_action(obs, worker_id):
+    # Avoid silent nightly destruction at shedCapacity=100 without turning normal
+    # routing into constant shed shuttling.
+    inventories = obs.get("private", {}).get("inventories", [])
+    if worker_id >= len(inventories):
+        return None
+    inv_count = sum(inventories[worker_id].values())
+    if inv_count < 4 or get_total_nonseed_stock(obs) < 92:
+        return None
+    pos = get_worker_position(obs, worker_id)
+    if pos is None:
+        return None
+    pos = tuple(pos)
+    target = nearest_shed_tile(pos)
+    if pos != target:
+        return move_toward(pos, target)
+    return ["DROP"]
+
 def get_general_worker_action(obs, worker_id):
     state = WORKER_STATE[worker_id]
     route = WORKER_ROUTES.get(worker_id, [])
 
     if worker_id > 0 and obs.get("hour", 0) == 0:
         return ["PASS"]
+
+    emergency_drop = get_emergency_drop_action(obs, worker_id)
+    if emergency_drop is not None:
+        return emergency_drop
 
     if state["stack"]:
         action = state["stack"][-1]
@@ -1409,10 +1534,11 @@ def get_final_drop_action(obs, worker_id):
     if pos is None:
         return ["PASS"]
     pos = tuple(pos)
-    if hour < FINAL_DROP_HOUR - distance(pos, CENTER):
+    shed_tile = nearest_shed_tile(pos)
+    if hour < FINAL_DROP_HOUR - distance(pos, shed_tile):
         return None
-    if pos != CENTER:
-        return move_toward(pos, CENTER)
+    if pos != shed_tile:
+        return move_toward(pos, shed_tile)
     if hour >= FINAL_DROP_HOUR:
         return ["DROP"]
     return None

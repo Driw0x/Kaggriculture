@@ -577,48 +577,6 @@ Only positive and affordable production choices are retained.
 The resulting plan is then converted into the required market orders for
 seeds, animals and Wheat.
 
-### Opponent production forecast
-
-CHI 9 also incorporates visible opponent production into its market
-forecast.
-
-The planner scans the other farms and estimates the supply that their
-currently visible crops and animals can add over the evaluated horizon.
-
-For visible crops, expected supply is approximated from their average
-daily production rate.
-
-For visible animals, the forecast includes:
-
-``` text
-animal product
-+
-fertilizer
-```
-
-This opponent supply is added to the projected market inventory before
-estimating future prices.
-
-The forecast is used when evaluating:
-
--   marginal production revenue;
--   task expected value;
--   expected route profit;
--   production choices that depend on those values.
-
-The resulting price model therefore considers:
-
-``` text
-current market inventory
-+ own expected supply
-+ visible opponent expected supply
-- future shop consumption
-```
-
-This remains a deterministic estimate based only on production visible
-in the current observation. Hidden future purchases, placements and
-strategy changes by the opponent are not predicted.
-
 ### Land-purchase profitability
 
 Land expansion is also evaluated using projected production.
@@ -670,7 +628,45 @@ SELL all remaining market products
 This ensures that products still held near the end of the match are
 converted into money before the game finishes.
 
-## 12. Version summary
+
+
+### Additional retained improvements
+
+The main additions are intentionally limited to:
+
+- event- and market-aware production valuation;
+- CARE-aware animal production estimates;
+- shed-overflow protection;
+- metered sales for price-sensitive products;
+- nearest-shed logistics using the four valid shed-access tiles;
+- extended Fibonacci hiring costs without an artificial 10-hand cap;
+- safer production-state synchronization when the production type of a tile
+  changes.
+
+These changes keep the existing greedy route allocator while improving the
+economic model and execution robustness.
+
+
+## 12. CHI 10 --- Observation-checked execution and cash-flow planning
+
+CHI 10 keeps the CHI 9 planner structure and focuses on making execution and
+economic estimates closer to the real game state.
+
+The main additions are:
+
+- event-based own and public opponent supply projections;
+- per-unit market-price simulation for projected sales;
+- cash-flow-aware production and hiring decisions;
+- validation of queued worker actions against the current observation before
+  execution;
+- adaptive sales and shed-capacity handling, including products deposited
+  during the current turn;
+- tighter endgame routing and liquidation handling.
+
+CHI 10 keeps the same greedy-pathing architecture while improving execution
+validation and economic planning.
+
+## 13. Version summary
 
 
   -----------------------------------------------------------------------
@@ -707,8 +703,13 @@ converted into money before the game finishes.
                                       purchases
 
   `chi9.py`                           Dynamic production purchasing,
-                                      opponent production forecasting,
-                                      profit-aware hiring, conditional
-                                      watering, endgame production
-                                      cutoffs and final liquidation
+                                      event/market-aware valuation,
+                                      profit-aware hiring, shed protection,
+                                      metered sales, safer logistics and
+                                      endgame production cutoffs
+
+  `chi10.py`                          Observation-checked execution,
+                                      event-based cash-flow valuation and
+                                      adaptive sale handling
+
   -----------------------------------------------------------------------
