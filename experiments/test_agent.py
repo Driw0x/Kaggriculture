@@ -1,87 +1,70 @@
-import gc
-import importlib
-import json
+import subprocess
 import sys
 from pathlib import Path
-from statistics import mean
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
-from kaggle_environments import make
 
 if len(sys.argv) != 2:
     print(f"Usage: python {Path(__file__).name} <agent>")
     sys.exit(1)
 
 AGENT_NAME = sys.argv[1]
-chi = importlib.import_module(f"src.agents.{AGENT_NAME}")
 
 N_GAMES = 1000
-rewards = []
 
-record_dir = ROOT / "experiments" / "runs" / AGENT_NAME
-record_dir.mkdir(parents=True, exist_ok=True)
+record_dir = (
+    ROOT
+    / "experiments"
+    / "runs"
+    / AGENT_NAME
+)
 
-for game in range(N_GAMES):
-    # Reset complet entre chaque game
-    chi = importlib.reload(chi)
-    agent = chi.agent
+record_dir.mkdir(
+    parents=True,
+    exist_ok=True,
+)
 
-    env = make(
-        "kaggriculture",
-        configuration={"episodeSteps": 720},
-        debug=False
+reward_sum = 0.0
+reward_min = float("inf")
+reward_max = float("-inf")
+
+run_one_script = (
+    ROOT
+    / "experiments"
+    / "run_one_game.py"
+)
+
+for game in range(1, N_GAMES + 1):
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(run_one_script),
+            AGENT_NAME,
+            str(game),
+            str(record_dir),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
     )
 
-    env.run([agent, "random"])
+    # run_one_game.py affiche uniquement le reward
+    reward = float(result.stdout.strip())
 
-    reward = env.steps[-1][0].reward
-    rewards.append(reward)
-
-    states = []
-
-    for step, env_step in enumerate(env.steps):
-        step_states = []
-
-        for player, state in enumerate(env_step):
-            step_states.append({
-                "player": player,
-                "observation": state.observation,
-                "action": state.action,
-                "reward": state.reward,
-                "status": state.status
-            })
-
-        states.append({
-            "step": step,
-            "states": step_states
-        })
-
-    # Sauvegarde immédiate
-    record_path = record_dir / f"game_{game + 1}_reward_{reward}.json"
-    record_path.write_text(
-        json.dumps(states),
-        encoding="utf-8"
-    )
+    reward_sum += reward
+    reward_min = min(reward_min, reward)
+    reward_max = max(reward_max, reward)
 
     print(
-        f"Game {game + 1}/{N_GAMES}: "
-        f"reward={reward} -> {record_path.name}"
+        f"Game {game}/{N_GAMES}: "
+        f"reward={reward}"
     )
 
-    # Libération de la RAM
-    del states
-    del env
-
-    if (game + 1) % 50 == 0:
-        gc.collect()
-
-avg = mean(rewards)
+avg = reward_sum / N_GAMES
 
 print()
 print(f"Agent: {AGENT_NAME}")
 print(f"Games: {N_GAMES}")
-print(f"Min reward: {min(rewards):.2f}")
-print(f"Max reward: {max(rewards):.2f}")
+print(f"Min reward: {reward_min:.2f}")
+print(f"Max reward: {reward_max:.2f}")
 print(f"Mean reward: {avg:.2f}")
