@@ -6,7 +6,7 @@ import torch
 
 from src.learning.model import BCModel
 from src.learning.state_encoder import PRODUCTS, encode_state
-from src.learning.target_encoder import occurrence_names, quantity_names, sell_names
+from src.learning.target_encoder import PURCHASE_NAMES, decode_purchase_bundle, occurrence_names, quantity_names, sell_names
 
 OCCURRENCE_NAMES = occurrence_names()
 QUANTITY_NAMES = quantity_names()
@@ -32,22 +32,42 @@ def decode_quantity(value):
     return max(1, int(round(math.expm1(max(0.0, float(value))))))
 
 
+def decode_hire(value):
+    return max(0, int(round(math.expm1(max(0.0, float(value))))))
+
+
 def decode_output(output, observation, thresholds):
-    hire_logits = output["hire"][0]
+    hire_value = output["hire"][0]
+    purchase_logits = output["purchase_bundle"][0]
     occurrence_logits = output["occurrence"][0]
     quantity_values = output["quantity"][0]
     sell_ratios = output["sell_ratio"][0]
-    occurrence_probabilities = torch.sigmoid(occurrence_logits)
 
-    decision = {"hire": int(hire_logits.argmax().item())}
-    scores = {"hire": float(torch.softmax(hire_logits, dim=0).max().item())}
+    occurrence_probabilities = torch.sigmoid(occurrence_logits)
+    purchase_probabilities = torch.softmax(purchase_logits, dim=0)
+    purchase_bundle = int(purchase_logits.argmax().item())
+    purchase_actions = decode_purchase_bundle(purchase_bundle)
+
+    decision = {"hire": decode_hire(hire_value.item())}
+    scores = {
+        "hire": float(hire_value.item()),
+        "purchase_bundle": purchase_bundle,
+        "purchase_bundle_confidence": float(purchase_probabilities.max().item()),
+        "purchase_actions": purchase_actions,
+    }
 
     farm = observation["farms"][observation["player"]]
-    hires_today = farm.get("hires_today", 0)
-    decision["hire"] = min(decision["hire"], max(0, 10 - hires_today))
-
     quantity_index = {name: index for index, name in enumerate(QUANTITY_NAMES)}
     sell_index = {name: index for index, name in enumerate(SELL_NAMES)}
+
+    for name in PURCHASE_NAMES:
+        decision[name] = 0
+
+    for name in purchase_actions:
+        if name == "buy_land":
+            decision[name] = int(len(farm.get("unlocked_quadrants", [])) < 4)
+        elif name in quantity_index:
+            decision[name] = decode_quantity(quantity_values[quantity_index[name]].item())
 
     for index, name in enumerate(OCCURRENCE_NAMES):
         probability = float(occurrence_probabilities[index].item())
@@ -57,23 +77,20 @@ def decode_output(output, observation, thresholds):
             decision[name] = 0
             continue
 
-        if name == "buy_land":
-            decision[name] = int(len(farm.get("unlocked_quadrants", [])) < 4)
-            continue
-
-        if name in quantity_index:
-            decision[name] = decode_quantity(quantity_values[quantity_index[name]].item())
-            continue
-
         if name in sell_index:
             item = name.removeprefix("sell_")
             available = max(0, int(observation.get("private", {}).get("shed", {}).get(item, 0)))
+
             if available == 0:
                 decision[name] = 0
                 continue
 
             ratio = float(sell_ratios[sell_index[name]].item())
             decision[name] = min(max(1, int(round(ratio * available))), available)
+            continue
+
+        if name in quantity_index:
+            decision[name] = decode_quantity(quantity_values[quantity_index[name]].item())
             continue
 
         decision[name] = 1
@@ -93,6 +110,7 @@ class BCPolicy:
             self.device = torch.device(device)
 
         checkpoint_data = torch.load(self.checkpoint_path, map_location=self.device, weights_only=False)
+
         self.model = BCModel(hidden_size=checkpoint_data["hidden_size"], dropout=checkpoint_data["dropout"]).to(self.device)
         self.model.load_state_dict(checkpoint_data["model_state_dict"])
         self.model.eval()
@@ -102,8 +120,10 @@ class BCPolicy:
 
     def predict(self, observation):
         state = torch.tensor(encode_state(observation), dtype=torch.float32, device=self.device).unsqueeze(0)
+
         with torch.no_grad():
             output = self.model(state)
+
         return decode_output(output, observation, self.thresholds)
 
     def predict_decision(self, observation):
