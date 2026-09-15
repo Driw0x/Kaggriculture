@@ -68,6 +68,9 @@ pip install -r requirements.txt
 - [`docs/learning_agent.md`](docs/learning_agent.md) ---
   Learning-based agent architecture, expert replay dataset, imitation
   learning, and reinforcement learning roadmap.
+- [`docs/scripted_agent.md`](docs/scripted_agent.md) ---
+  Scripted public-route agent baseline, runtime safeguards, final
+  liquidation handling, and improvement roadmap.
 
 ## License
 

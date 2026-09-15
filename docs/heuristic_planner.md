@@ -666,7 +666,186 @@ The main additions are:
 CHI 10 keeps the same greedy-pathing architecture while improving execution
 validation and economic planning.
 
-## 13. Version summary
+### CHI 10 Temporal — experimental rolling-horizon scheduler
+
+`src/agents/chi10_temporal.py` is a standalone variant with the CHI 10
+opening and economic model. After the opening, it rebuilds a timed schedule
+from the observed worker positions, tiles and inventories at every tick.
+
+The scheduler keeps up to four alternative assignments (two during the
+daily hiring estimates). It can skip an optional task to leave time for a
+more valuable chain. Tasks are processed in a fixed precedence-compatible
+priority order; this is a bounded heuristic, not a globally optimal solver.
+
+The schedule accounts for:
+
+- one action or movement per worker per tick;
+- watering before harvesting, and planting followed by mandatory watering;
+- shared seed reservations, animal pickups and wheat availability;
+- wheat harvest/deposit/pickup dependencies across workers;
+- hired workers and purchased resources becoming available on the next tick;
+- return travel and deposits before the end of the horizon.
+
+Daily purchase estimates assume the required supplies can be bought. Live
+execution uses only observed stock, checks actions in worker order, caps
+deposits to the available shed room and includes same-turn transfers in sales.
+Failed purchases or unexpected state changes are handled by replanning.
+Shed congestion and future sale prices remain approximate in the search.
+
+With the default 720-step game, the last actionable observation is day 29,
+hour 22. The final schedule reserves time to deposit before that action ends;
+automatic end-of-day deposits cannot be relied on for the final sale.
+
+Unused greedy routing, queued execution, old sale settings and obsolete
+production-estimation helpers have been removed from this variant. The agent
+uses the Python standard library only and supports the default game settings.
+
+Run the focused tests from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_chi10_temporal.py -q -p no:cacheprovider
+```
+
+Full-game checks are opt-in. They use two seeds in both player positions
+against CHI 10, verify completion and check worker actions with the real
+engine. JUnit output records rewards and maximum measured action time:
+
+```powershell
+$env:RUN_KAGGRICULTURE = "1"
+.\.venv\Scripts\python.exe -m pytest tests/test_chi10_temporal.py -q -p no:cacheprovider -o junit_family=xunit1 --junitxml=experiments/chi10_temporal_validation.xml
+Remove-Item Env:RUN_KAGGRICULTURE
+```
+
+These checks cover execution in the tested scenarios; they do not establish
+a competitive improvement over CHI 10.
+
+
+## 13. CHI 11 --- Public-meta shop and market overlay
+
+CHI 11 keeps the CHI 10 economic planner and adds a small observation-only
+overlay based on public game state.
+
+### Shop-order production prior
+
+The order of unlocked shops is used as a mild production prior.
+
+The first unlocked shop applies an 8% multiplier and the second a 3%
+multiplier to production whose output matches the corresponding public shop
+demand.
+
+These multipliers are applied on top of the existing CHI 10 production score:
+
+``` text
+CHI 11 score = CHI 10 score × public shop multiplier
+```
+
+The adjustment remains deliberately small so the existing marginal-profit
+calculation stays decisive unless candidate productions are already close.
+
+### Public farm-similarity detection
+
+CHI 11 builds a compact signature from information already visible in the
+observation:
+
+- crop counts;
+- animal counts;
+- number of unlocked quadrants;
+- number of farm hands.
+
+The two farms are considered persistently similar only after repeated
+near-equality of these public signatures.
+
+The retained thresholds are:
+
+``` text
+detection starts at step 48
+signature distance <= 2
+24 consecutive matching turns
+overlay can become active from step 160
+```
+
+No opponent identity, rating, episode identifier, hidden inventory, replay
+lookup or future action is used.
+
+### Market-impact-aware SELL ordering
+
+CHI 11 does not create a separate sale strategy. It only reorders SELL orders
+that already exist in the CHI 10 action.
+
+For every existing sale, the planner estimates the immediate price impact from
+the quantity being sold:
+
+``` text
+impact = quantity × max(current price - post-sale price, 0)
+```
+
+SELL slots with the largest estimated impact are executed first, while every
+non-SELL market slot keeps its original position.
+
+During a sustained public clone state, ordinary sale quantities are capped at
+10 units to reduce simultaneous market collision. Final-day liquidation is
+never capped.
+
+### Standalone submission
+
+CHI 11 embeds the CHI 10 implementation directly in the same module.
+
+The final `agent(obs)`:
+
+1. detects the public-meta state;
+2. temporarily applies the shop-order production multiplier;
+3. calls the embedded CHI 10 agent exactly once;
+4. restores the original production scoring function;
+5. reorders the resulting SELL slots.
+
+No project-local import is required, so `chi11.py` can be submitted directly
+as a single Kaggle agent file.
+
+## 14. Jet --- Public-route experimental branch
+
+Jet is kept separate from the CHI lineage. Instead of rebuilding strategy from
+the CHI heuristic planner, it starts from a strong public v27 fixed action
+route and uses that route as a competitive baseline.
+
+### `jet.py` --- readable baseline
+
+The original compressed action tape was expanded mechanically into readable
+Python data.
+
+The route contains 719 actions organized by day, hour and step. Its action
+contents are unchanged, while the existing runtime behavior remains:
+
+- actor-local WEED repair;
+- public market-price modeling;
+- ordering of route-existing SELL slots by estimated price impact and bounded
+  Town demand;
+- no opponent identity or hidden information.
+
+The purpose of `jet.py` is to make the public route inspectable before any
+strategic modification.
+
+### `jet1.py` --- safe execution and final liquidation
+
+Jet 1 keeps the same macro route and adds two deliberately small runtime
+changes.
+
+First, runtime overlays use staged fallbacks. A failure in WEED repair, final
+liquidation or SELL ordering no longer discards the entire route tick. The last
+valid action is preserved, and an all-`PASS` action is used only when the base
+route action itself cannot be recovered.
+
+Second, the last actionable step uses observation-based liquidation. The agent
+sells the actual sellable shed inventory, including products projected to enter
+the shed through same-tick `DROP` actions, while respecting the configured
+market-order limit.
+
+No earlier route action, production layout, hire schedule, path or purchase
+plan is changed by these two additions.
+
+Jet remains an experimental route-derived family and should be benchmarked
+separately from CHI 11.
+
+## 15. Version summary
 
 
   -----------------------------------------------------------------------
@@ -711,5 +890,10 @@ validation and economic planning.
   `chi10.py`                          Observation-checked execution,
                                       event-based cash-flow valuation and
                                       adaptive sale handling
+
+  `chi11.py`                          CHI 10 plus public shop-order production
+                                      priors, persistent public farm-similarity
+                                      detection, market-impact-aware SELL
+                                      ordering and single-file submission
 
   -----------------------------------------------------------------------
