@@ -4,6 +4,9 @@
 high-scoring Kaggriculture work. It deliberately transfers general mechanisms
 instead of copying replay action tapes.
 
+For the complete CHI version history and the place of CHI 11 in the retained
+heuristic family, see [`heuristic_planner.md`](heuristic_planner.md).
+
 ## Public references
 
 - Kaito Fukami's public v48 notebook (historical public score 3009.0):

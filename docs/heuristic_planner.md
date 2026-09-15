@@ -722,6 +722,9 @@ a competitive improvement over CHI 10.
 
 ## 13. CHI 11 --- Public-meta shop and market overlay
 
+For implementation details, public references, validation results and focused
+tests, see [`chi11.md`](chi11.md).
+
 CHI 11 keeps the CHI 10 economic planner and adds a small observation-only
 overlay based on public game state.
 
@@ -801,51 +804,8 @@ The final `agent(obs)`:
 No project-local import is required, so `chi11.py` can be submitted directly
 as a single Kaggle agent file.
 
-## 14. Jet --- Public-route experimental branch
 
-Jet is kept separate from the CHI lineage. Instead of rebuilding strategy from
-the CHI heuristic planner, it starts from a strong public v27 fixed action
-route and uses that route as a competitive baseline.
-
-### `jet.py` --- readable baseline
-
-The original compressed action tape was expanded mechanically into readable
-Python data.
-
-The route contains 719 actions organized by day, hour and step. Its action
-contents are unchanged, while the existing runtime behavior remains:
-
-- actor-local WEED repair;
-- public market-price modeling;
-- ordering of route-existing SELL slots by estimated price impact and bounded
-  Town demand;
-- no opponent identity or hidden information.
-
-The purpose of `jet.py` is to make the public route inspectable before any
-strategic modification.
-
-### `jet1.py` --- safe execution and final liquidation
-
-Jet 1 keeps the same macro route and adds two deliberately small runtime
-changes.
-
-First, runtime overlays use staged fallbacks. A failure in WEED repair, final
-liquidation or SELL ordering no longer discards the entire route tick. The last
-valid action is preserved, and an all-`PASS` action is used only when the base
-route action itself cannot be recovered.
-
-Second, the last actionable step uses observation-based liquidation. The agent
-sells the actual sellable shed inventory, including products projected to enter
-the shed through same-tick `DROP` actions, while respecting the configured
-market-order limit.
-
-No earlier route action, production layout, hire schedule, path or purchase
-plan is changed by these two additions.
-
-Jet remains an experimental route-derived family and should be benchmarked
-separately from CHI 11.
-
-## 15. Version summary
+## 14. Version summary
 
 
   -----------------------------------------------------------------------
