@@ -7732,7 +7732,112 @@ def _rank_sell_slots(obs, action, configuration):
     return action
 
 
+def _final_action_step(configuration):
+    """Last action processed by Kaggriculture before the episode is marked DONE."""
+    episode_steps = int(_get(configuration, "episodeSteps", 720) or 720)
+    return max(0, episode_steps - 2)
+
+
+def _is_shed_adjacent(position, configuration):
+    try:
+        board_size = int(_get(configuration, "boardSize", 10) or 10)
+        half = board_size // 2
+        return tuple(position) in {
+            (half - 1, half - 1),
+            (half, half - 1),
+            (half - 1, half),
+            (half, half),
+        }
+    except (TypeError, ValueError):
+        return False
+
+
+def _project_final_shed(obs, action, configuration):
+    """Project shed contents after same-tick DROP actions, before market orders.
+
+    Kaggriculture resolves farmer/hand actions before market orders.  The final
+    route contains a hand DROP on the last actionable tick, so using only the
+    pre-action shed would miss stock that becomes sellable during that tick.
+    """
+    private = _get(obs, "private", {}) or {}
+    shed = dict(_get(private, "shed", {}) or {})
+    inventories = list(_get(private, "inventories", []) or [])
+    farm = _farm(obs, _seat(obs))
+    positions = [_get(farm, "farmer"), *list(_get(farm, "hands", []) or [])]
+    unit_actions = [action.get("farmer", ["PASS"]), *list(action.get("hands") or [])]
+    shed_capacity = int(_get(configuration, "shedCapacity", 100) or 100)
+
+    # Mirror the environment's farmer-then-hands order for DROP.
+    for index, unit_action in enumerate(unit_actions):
+        if index >= len(positions) or index >= len(inventories):
+            break
+        if not isinstance(unit_action, list) or not unit_action or unit_action[0] != "DROP":
+            continue
+        position = positions[index]
+        if position is None or not _is_shed_adjacent(position, configuration):
+            continue
+        inventory = inventories[index] or {}
+        for item, raw_quantity in inventory.items():
+            try:
+                quantity = max(0, int(raw_quantity))
+            except (TypeError, ValueError):
+                continue
+            room = max(0, shed_capacity - sum(int(v or 0) for v in shed.values()))
+            if room <= 0:
+                break
+            take = min(quantity, room)
+            if take > 0:
+                shed[item] = int(shed.get(item, 0) or 0) + take
+
+    return shed
+
+
+def _apply_final_liquidation(obs, action, configuration, step):
+    """On the last actionable tick, sell every sellable product actually in the shed.
+
+    There are nine sellable product types and the default market-order cap is ten,
+    so one SELL order per non-empty product fits in a normal Kaggriculture turn.
+    If a custom configuration lowers the cap, keep only the highest-value orders
+    according to the existing route market scorer.
+    """
+    if step != _final_action_step(configuration):
+        return action
+
+    action = _copy_action(action)
+    shed = _project_final_shed(obs, action, configuration)
+    liquidation = []
+    for item in _MARKET_PARAMS:
+        try:
+            quantity = max(0, int(_get(shed, item, 0) or 0))
+        except (TypeError, ValueError):
+            quantity = 0
+        if quantity > 0:
+            liquidation.append(["SELL", item, quantity])
+
+    max_orders = max(1, int(_get(configuration, "maxMarketOrdersPerTurn", 10) or 10))
+    if len(liquidation) > max_orders:
+        liquidation.sort(
+            key=lambda order: _order_score(obs, configuration, order),
+            reverse=True,
+        )
+        liquidation = liquidation[:max_orders]
+
+    action["market"] = liquidation
+    return action
+
+
+def _pass_action(obs):
+    farm = _farm(obs, _seat(obs))
+    return {
+        "farmer": ["PASS"],
+        "hands": [["PASS"] for _ in (_get(farm, "hands", []) or [])],
+        "market": [],
+    }
+
+
 def agent(obs, configuration=None):
+    # Route selection is the only stage where a complete fallback is unavoidable:
+    # without a usable base action there is nothing safe to preserve.
     try:
         actions = (
             _REBALANCE_ACTIONS
@@ -7740,17 +7845,36 @@ def agent(obs, configuration=None):
             else _LEGACY_ACTIONS
         )
         step = min(max(0, int(_get(obs, "step", 0) or 0)), len(actions) - 1)
-        action = _weed_repair_action(
-            obs, _copy_action(actions[step]), actions, step
-        )
-        return _align_hands(_rank_sell_slots(obs, action, configuration), obs)
+        base_action = _copy_action(actions[step])
     except Exception:
-        farm = _farm(obs, _seat(obs))
-        return {
-            "farmer": ["PASS"],
-            "hands": [["PASS"] for _ in (_get(farm, "hands", []) or [])],
-            "market": [],
-        }
+        return _pass_action(obs)
+
+    # Each runtime enhancement is isolated.  If one fails, keep the last known
+    # valid route action instead of discarding the whole tick.
+    action = base_action
+    try:
+        action = _weed_repair_action(obs, action, actions, step)
+    except Exception:
+        action = base_action
+
+    try:
+        action = _apply_final_liquidation(obs, action, configuration, step)
+    except Exception:
+        pass
+
+    try:
+        action = _rank_sell_slots(obs, action, configuration)
+    except Exception:
+        pass
+
+    try:
+        return _align_hands(action, obs)
+    except Exception:
+        # Returning the intact route action is safer than forcing an all-PASS tick.
+        try:
+            return _copy_action(action)
+        except Exception:
+            return _pass_action(obs)
 
 
 def _kaggle_submission_entrypoint(obs, configuration=None):
