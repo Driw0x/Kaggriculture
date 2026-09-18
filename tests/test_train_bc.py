@@ -33,14 +33,16 @@ def test_masked_smooth_l1_empty():
 
 def test_compute_losses():
     output = {
-        "hire": torch.randn(2, 11, requires_grad=True),
+        "hire": torch.randn(2, requires_grad=True),
+        "purchase_bundle": torch.randn(2, 4, requires_grad=True),
         "occurrence": torch.randn(2, 3, requires_grad=True),
         "quantity": torch.randn(2, 2, requires_grad=True),
         "sell_ratio": torch.sigmoid(torch.randn(2, 1, requires_grad=True)),
     }
 
     batch = {
-        "hire": torch.tensor([0, 2]),
+        "hire": torch.tensor([0.0, 2.0]),
+        "purchase_bundle": torch.tensor([1, 2]),
         "occurrence": torch.tensor([
             [1.0, 0.0, 1.0],
             [0.0, 1.0, 0.0],
@@ -63,19 +65,12 @@ def test_compute_losses():
         ]),
     }
 
-    hire_weights = torch.ones(11)
-    occurrence_pos_weight = torch.ones(3)
-
-    losses = compute_losses(
-        output,
-        batch,
-        hire_weights,
-        occurrence_pos_weight,
-    )
+    losses = compute_losses(output, batch)
 
     assert set(losses) == {
         "total",
         "hire",
+        "purchase_bundle",
         "occurrence",
         "quantity",
         "sell",

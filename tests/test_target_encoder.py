@@ -1,6 +1,6 @@
 import math
 
-from src.learning.target_encoder import encode_target, occurrence_names, quantity_names, sell_names
+from src.learning.target_encoder import decode_purchase_bundle, encode_target, occurrence_names, quantity_names, sell_names
 
 
 def test_target_encoder():
@@ -37,11 +37,13 @@ def test_target_encoder():
     quantity = dict(zip(quantity_names(), target["quantity"]))
     sell_ratio = dict(zip(sell_names(), target["sell_ratio"]))
 
-    assert target["hire"] == 3
+    assert target["hire"] == math.log1p(3)
 
-    assert occurrence["buy_land"] == 1.0
-    assert occurrence["buy_seed_WHEAT"] == 1.0
-    assert occurrence["buy_animal_GOOSE"] == 1.0
+    assert set(decode_purchase_bundle(target["purchase_bundle"])) == {
+        "buy_land",
+        "buy_seed_WHEAT",
+        "buy_animal_GOOSE",
+    }
     assert occurrence["plant_WHEAT"] == 1.0
     assert occurrence["place_GOOSE"] == 1.0
     assert occurrence["fertilize"] == 1.0

@@ -72,11 +72,13 @@ def test_bc_dataset():
 
     assert sample["state"].shape == (len(feature_names()),)
     assert sample["hire"].shape == ()
+    assert sample["purchase_bundle"].shape == ()
     assert sample["occurrence"].shape == (len(occurrence_names()),)
     assert sample["quantity"].shape == (len(quantity_names()),)
     assert sample["sell_ratio"].shape == (len(sell_names()),)
 
-    assert sample["hire"].dtype == torch.long
+    assert sample["hire"].dtype == torch.float32
+    assert sample["purchase_bundle"].dtype == torch.long
     assert sample["state"].dtype == torch.float32
     assert sample["quantity_mask"].sum() == 1
     assert sample["sell_mask"].sum() == 1

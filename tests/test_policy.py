@@ -4,7 +4,7 @@ import math
 import torch
 
 from src.learning.policy import decode_output, decode_quantity, load_thresholds, market_orders_from_decision
-from src.learning.target_encoder import occurrence_names, quantity_names, sell_names
+from src.learning.target_encoder import PURCHASE_BUNDLE_COUNT, PURCHASE_NAMES, occurrence_names, quantity_names, sell_names
 
 OCCURRENCE_NAMES = occurrence_names()
 QUANTITY_NAMES = quantity_names()
@@ -32,12 +32,15 @@ def make_observation():
 
 
 def make_output():
-    return {
-        "hire": torch.zeros((1, 11)),
+    output = {
+        "hire": torch.zeros(1),
+        "purchase_bundle": torch.full((1, PURCHASE_BUNDLE_COUNT), -10.0),
         "occurrence": torch.full((1, len(OCCURRENCE_NAMES)), -10.0),
         "quantity": torch.zeros((1, len(QUANTITY_NAMES))),
         "sell_ratio": torch.zeros((1, len(SELL_NAMES))),
     }
+    output["purchase_bundle"][0, 0] = 10.0
+    return output
 
 
 def make_thresholds():
@@ -47,6 +50,12 @@ def make_thresholds():
 def activate(output, name, probability=0.99):
     index = OCCURRENCE_NAMES.index(name)
     output["occurrence"][0, index] = math.log(probability / (1 - probability))
+
+
+def select_purchase_bundle(output, *names):
+    bundle = sum(1 << PURCHASE_NAMES.index(name) for name in names)
+    output["purchase_bundle"].fill_(-10.0)
+    output["purchase_bundle"][0, bundle] = 10.0
 
 
 def test_decode_quantity():
@@ -62,10 +71,10 @@ def test_load_thresholds(tmp_path):
     assert load_thresholds(path) == thresholds
 
 
-def test_hire_is_clamped_to_daily_limit():
+def test_hire_decoding():
     observation = make_observation()
     output = make_output()
-    output["hire"][0, 10] = 10.0
+    output["hire"][0] = math.log1p(8)
     decision, _ = decode_output(output, observation, make_thresholds())
     assert decision["hire"] == 8
 
@@ -73,7 +82,7 @@ def test_hire_is_clamped_to_daily_limit():
 def test_quantity_decoding():
     observation = make_observation()
     output = make_output()
-    activate(output, "buy_seed_WHEAT")
+    select_purchase_bundle(output, "buy_seed_WHEAT")
     output["quantity"][0, QUANTITY_NAMES.index("buy_seed_WHEAT")] = math.log1p(6)
     decision, _ = decode_output(output, observation, make_thresholds())
     assert decision["buy_seed_WHEAT"] == 6
@@ -107,7 +116,7 @@ def test_buy_land_disabled_when_all_land_unlocked():
     observation = make_observation()
     observation["farms"][0]["unlocked_quadrants"] = ["NW", "NE", "SW", "SE"]
     output = make_output()
-    activate(output, "buy_land")
+    select_purchase_bundle(output, "buy_land")
     decision, _ = decode_output(output, observation, make_thresholds())
     assert decision["buy_land"] == 0
 

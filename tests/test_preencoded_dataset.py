@@ -9,7 +9,8 @@ from src.learning.preencoded_dataset import (
 def create_dataset(path):
     torch.save({
         "state": torch.zeros((6, 3)),
-        "hire": torch.zeros(6, dtype=torch.long),
+        "hire": torch.zeros(6),
+        "purchase_bundle": torch.zeros(6, dtype=torch.long),
         "occurrence": torch.zeros((6, 2)),
         "quantity": torch.zeros((6, 1)),
         "quantity_mask": torch.zeros((6, 1)),
@@ -27,7 +28,8 @@ def test_preencoded_dataset(tmp_path):
 
     assert len(dataset) == 6
     assert dataset[0]["state"].shape == (3,)
-    assert dataset[0]["hire"].dtype == torch.long
+    assert dataset[0]["hire"].dtype == torch.float32
+    assert dataset[0]["purchase_bundle"].dtype == torch.long
 
 
 def test_split_by_episode(tmp_path):

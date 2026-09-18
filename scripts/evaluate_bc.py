@@ -24,6 +24,16 @@ def safe_div(a, b):
     return a / b if b else 0.0
 
 
+def evaluate_occurrences(logits, targets, threshold):
+    predicted = torch.sigmoid(logits) >= threshold
+    target = targets > 0.5
+    tp = (predicted & target).sum(dim=0)
+    fp = (predicted & ~target).sum(dim=0)
+    fn = (~predicted & target).sum(dim=0)
+    tn = (~predicted & ~target).sum(dim=0)
+    return tp, fp, fn, tn
+
+
 def decode_count(value):
     return max(0, int(round(math.expm1(max(0.0, float(value))))))
 
@@ -35,11 +45,11 @@ def compute_f1(tp, fp, fn):
     return precision, recall, f1
 
 
-def search_best_threshold(probabilities, targets):
+def search_best_threshold(probabilities, targets, thresholds=None):
     best_threshold = 0.5
     best_f1 = -1.0
 
-    for threshold in [i / 100 for i in range(5, 96, 5)]:
+    for threshold in thresholds or [i / 100 for i in range(5, 96, 5)]:
         predicted = probabilities >= threshold
         target = targets > 0.5
         tp = int((predicted & target).sum())

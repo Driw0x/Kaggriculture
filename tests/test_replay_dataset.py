@@ -33,7 +33,17 @@ def test_replay_dataset(tmp_path):
                     "observation": {"player": 1, "day": 0, "hour": 0},
                     "action": {"farmer": ["PASS"], "hands": [], "market": []},
                 },
-            ]
+            ],
+            [
+                {
+                    "observation": {"player": 0, "day": 0, "hour": 1},
+                    "action": {"farmer": ["WEST"], "hands": [], "market": []},
+                },
+                {
+                    "observation": {"player": 1, "day": 0, "hour": 1},
+                    "action": {"farmer": ["PASS"], "hands": [], "market": []},
+                },
+            ],
         ],
     }
 
@@ -47,7 +57,7 @@ def test_replay_dataset(tmp_path):
 
     assert len(dataset) == 1
 
-    sample = dataset[0]
+    sample = next(iter(dataset))
     assert sample["player"] == 1
     assert sample["team"] == "Expert"
     assert sample["episode"] == 1
