@@ -56,21 +56,32 @@ pip install -r requirements.txt
 
 ## Documentation
 
-- [`docs/game_rules.md`](docs/game_rules.md) --- Complete game rules
+* [`docs/game_rules.md`](docs/game_rules.md) --- Complete game rules
   and mechanics
-- [`docs/getting_started.md`](docs/getting_started.md) --- Agent
+
+* [`docs/getting_started.md`](docs/getting_started.md) --- Agent
   development, local testing, and Kaggle submission guide
-- [`docs/game_mechanics_reference.md`](docs/game_mechanics_reference.md)
+
+* [`docs/game_mechanics_reference.md`](docs/game_mechanics_reference.md)
   --- Reference for core game mechanics, production, animals, farm
   infrastructure, workers, town shops, and market behavior.
-- [`docs/heuristic_planner.md`](docs/heuristic_planner.md) ---
-  Heuristic planner strategy and iteration history.
-- [`docs/learning_agent.md`](docs/learning_agent.md) ---
+
+* [`docs/chi_agents.md`](docs/chi_agents.md) ---
+  CHI heuristic-planner family, strategy evolution, economic planning,
+  execution improvements, and validation history.
+
+* [`docs/learning_agent.md`](docs/learning_agent.md) ---
   Learning-based agent architecture, expert replay dataset, imitation
   learning, and reinforcement learning roadmap.
-- [`docs/scripted_agent.md`](docs/scripted_agent.md) ---
-  Scripted public-route agent baseline, runtime safeguards, final
-  liquidation handling, and improvement roadmap.
+
+* [`docs/jet_agents.md`](docs/jet_agents.md) ---
+  Jet public-route agent family, runtime safeguards, market experiments,
+  and incremental route-based improvements.
+
+* [`docs/ye_agents.md`](docs/ye_agents.md) ---
+  Ye V58 public agent reference and Ye1 execution, robustness, and
+  final-money improvements.
+
 
 ## License
 
