@@ -266,28 +266,156 @@ excessive, and removed when no additional unit can be consumed. Missing
 inventory information leaves the Jet 3 action unchanged, and future fertilizer
 collection is deliberately ignored to keep the filter conservative.
 
-The direct benchmark used seeds 0–9, both seats for every seed, and the same
-720-step configuration, for 20 paired games:
+The final direct validation used seeds 0–99, both seats for every seed, and the
+same 720-step configuration, for 200 paired games. Jet 3 averaged 84,209.90
+final money and Jet 5 averaged 84,251.37. The paired Jet 5 minus Jet 3
+difference was +41.46. Jet 5 recorded 184 wins and 16 losses, with positive
+results on 94 of 100 seeds. Neither agent recorded an outer error, policy
+error, or fallback.
 
-| Metric | Jet 3 | Jet 5 |
+The gain is small but reproducible across the larger validation. Jet 5 is the
+current retained baseline.
+
+## 8. Jet 6 — Earlier monetization of finished products
+
+### Initial Jet 6 experiment
+
+Jet 6 started from Jet 5 with a late-Tomato viability filter. The hypothesis
+came from a correlation in an earlier top-replay analysis, but the selected
+Jet 5 continuation emitted no Tomato plant at all. Seeds 0–99, both seats,
+therefore produced zero examined or modified Tomato actions, zero avoided
+seeds, and a paired mean difference of 0.00. The experiment was inconclusive
+and its code was removed.
+
+### Terminal fertilizer correction
+
+A runtime trace then exposed a real terminal defect. At steps 714–717 a worker
+could attempt collection on an empty pasture, care for the adjacent animal,
+and collect fertilizer only after it was too late to return it to the shed.
+Jet 6 now starts that one-tile collection route at step 714, or advances a
+step-715 `CARE` to `COLLECT_FERTILIZER`, only when collection, return, and drop
+still fit before liquidation. Missing information and unrelated actions are
+left unchanged.
+
+The correction scored +1.00 on the 20-game screen. On seeds 0–99 it scored
+84,225.79 mean final money versus 84,224.79 for Jet 5: paired mean +0.99,
+paired range -21,913 to +21,914, 196 wins and 4 losses, with all 100 seeds
+positive after combining their two seats. There were no errors or fallbacks.
+Telemetry recorded 400 dead collections examined, 174 recovery routes
+started, 373 collections advanced, and 373 fertilizer units recovered. The
+rule is retained as a valid bug fix, not as the main Jet 6 improvement.
+
+### Public research and runtime diagnosis
+
+The research phase inspected the following public material:
+
+- the [Lonespear Kaggriculture agent and tuning log](https://github.com/lonespear/kaggriculture),
+  whose measured experiments reject late concentrated sales, identify
+  endgame inventory leakage, and validate local worker-task clustering;
+- the public [Multi-Route Farming Agent](https://www.kaggle.com/code/flexonafft/kaggriculture-multi-route-farming-agent),
+  which selects fixed continuations from observable shop state;
+- the [COK public agent and strategy notes](https://github.com/COK-ZhangZiliang/Kaggriculture),
+  which use fail-closed public-state recovery and projected liquidation;
+- the public [AgroBoss notebook](https://www.kaggle.com/code/songoku2005/kaggriculture),
+  which uses greedy nearest-worker assignment;
+- the [official environment documentation](https://github.com/Kaggle/kaggle-environments/blob/master/kaggle_environments/envs/kaggriculture/AGENTS.md).
+
+The shortlist was deliberately small. Terminal inventory recovery was already
+mostly implemented by Jet 5, endgame field filling was already present in the
+selected tape, and cluster-based task assignment would replace the fixed
+production strategy. Public multi-route selection was directly applicable but
+high risk. Earlier product sales were frequent, local, compatible with the
+route, and supported by the public finding that a terminal sales concentration
+loses value through market impact.
+
+The active continuation was inspected statically and over seeds 0–9, both
+seats. Final shed and seed inventories were zero. Before the terminal fix,
+16 carried fertilizer units remained across 20 games. The route bought two
+land quadrants and did not show evidence that further locked land constrained
+production. It emitted 279 `HIRE` orders per game although only the initial
+recruitments could succeed; removing those harmless no-ops alone could not
+raise final money. The fixed route used only 697 of 7,200 possible market
+order slots per game.
+
+Important selected-route market actions were:
+
+| Action and item | Orders | Quantity | First step | Last step | Largest order |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `BUY_PRODUCT WHEAT` | 53 | 140 | 1 | 278 | 5 |
+| `BUY_PRODUCT FERTILIZER` | 18 | 51 | 150 | 697 | 8 |
+| `BUY_SEED WHEAT` | 25 | 187 | 1 | 624 | 11 |
+| `BUY_SEED STRAWBERRY` | 15 | 44 | 96 | 264 | 23 |
+| `BUY_SEED MELON` | 2 | 13 | 1 | 284 | 12 |
+| `BUY_SEED CARROT` | 6 | 10 | 96 | 669 | 3 |
+| `BUY_ANIMAL COW` | 5 | 6 | 1 | 176 | 2 |
+| `BUY_ANIMAL SHEEP` | 6 | 11 | 1 | 265 | 2 |
+| `BUY_LAND` | 2 | 2 | 150 | 265 | 1 |
+| `SELL WHEAT` | 57 | 359 | 2 | 718 | 50 |
+| `SELL FERTILIZER` | 96 | 358 | 30 | 717 | 17 |
+| `SELL WOOL` | 44 | 285 | 150 | 711 | 20 |
+| `SELL MILK` | 43 | 236 | 195 | 711 | 15 |
+| `SELL STRAWBERRY` | 33 | 272 | 388 | 713 | 16 |
+| `SELL MELON` | 8 | 72 | 248 | 264 | 12 |
+| `SELL CARROT` | 5 | 18 | 676 | 715 | 6 |
+
+The same 20 runtime games emitted 4,740 `PLANT`, 1,220 `FERTILIZE`,
+5,580 `HIRE`, 340 pasture builds, 40 coop builds, and 2,180 placements.
+Runtime market totals included 2,800 purchased wheat, 620 purchased
+fertilizer after Jet 5's filter, 7,246 sold wheat, 7,244 sold fertilizer,
+5,700 sold wool, 4,720 sold milk, 5,440 sold strawberry, 1,440 sold melon,
+and 360 sold carrot. Thus production was monetized eventually, but finished
+products commonly waited in the shed while market slots went unused. This was
+the clearest recurring economic weakness; weak seeds also ended with much less
+money, so recovering hundreds per game mattered proportionally more there.
+
+### Candidates tested and retained mechanism
+
+Re-enabling the embedded public multi-route selector was tested first. It
+activated on 3,882 recovery-route and 1,246 known-Yarn steps in the 20-game
+screen, but reduced mean final money by 3,340.00. It won 7 seeds and lost 3,
+with paired results from -32,874 to +15,353. The candidate was rejected and
+fully reverted.
+
+The retained mechanism fills otherwise-unused market slots with sales of
+finished products already visible in the private shed. It subtracts quantities
+already covered by the current action, never exceeds the configured order
+limit, and excludes Wheat and Fertilizer because the fixed route can still use
+them as inputs. It does not change worker actions, production, purchases, land,
+or routing. This is a project-specific transfer of the public sell-timing
+finding, not copied public-agent code.
+
+On the seeds 0–9 screen, Jet 6 averaged 81,730.10 versus 80,564.40 for Jet 5.
+The paired gain was +1,165.70 (+1.45%), with 18 wins, 2 losses, 9 positive
+seeds, 1 negative seed, and no errors. The full seeds 0–99 validation was:
+
+| Metric | Jet 5 | Jet 6 |
 | --- | ---: | ---: |
-| Mean final money | 81,798.50 | 81,842.10 |
-| Median | 79,470.50 | 79,527.50 |
-| Minimum | 54,183.00 | 54,244.00 |
-| Maximum | 116,332.00 | 116,379.00 |
-| Wins | 2 | 18 |
+| Mean final money | 83,019.35 | 83,979.63 |
+| Median | 82,499.00 | 83,438.00 |
+| Minimum | 41,061.00 | 41,934.00 |
+| Maximum | 138,151.00 | 138,732.00 |
 
-The paired Jet 5 minus Jet 3 difference averaged +43.60, ranging from -20.00
-to +67.00, with no draws. Neither agent recorded an outer error, policy error,
-or fallback. Jet 5 examined 360 fertilizer purchases, modified and completely
-removed 140 of them, and avoided 400 fertilizer units in total. No partial
-reduction occurred in this benchmark, although the filter supports it.
+The paired mean gain was +960.27, or +1.16%, with a paired range of -21,250
+to +23,233. Jet 6 recorded 190 wins, 10 losses, and no draws. At seed level,
+96 were positive, 4 negative, and none neutral. The large paired extremes were
+opposite-seat interaction effects; their seed totals remained representative,
+and the gain was not dependent on a few outliers. There were no outer errors,
+policy errors, or fallbacks. Early-sale telemetry recorded 7,028 opportunities,
+6,469 added orders, 42,101 offered units, and 3,001 opportunities observed on
+turns whose market order list was already full.
 
-The gain is small but repeated across nine of ten seeds and in both seats.
-Jet 5 is therefore retained on this benchmark, while Jet 3 remains the direct
-reference baseline for measuring the isolated change.
+The untouched holdout used seeds 100–129, both seats. Jet 5 averaged 80,703.08
+and Jet 6 averaged 81,842.42. The paired gain was +1,139.33, or +1.41%, with
+a range of -219 to +3,009. Jet 6 recorded 59 wins, 1 loss, and no draws; all
+30 seeds were positive. There were no errors or fallbacks. Holdout telemetry
+recorded 2,104 opportunities, 1,936 added orders, 12,723 offered units, and
+900 full-market skips. No threshold was tuned on the holdout.
 
-## 8. Benchmark protocol
+The early-sale mechanism is therefore retained. Together with the terminal
+fertilizer bug fix, it makes Jet 6 the new local baseline. This conclusion is
+limited to the paired local benchmarks and is not a leaderboard claim.
+
+## 9. Benchmark protocol
 
 Every Jet modification should be compared directly with the previous Jet
 version.
@@ -312,7 +440,7 @@ Record at minimum:
 
 A change should remain isolated until its effect is understood.
 
-## 9. Next improvement candidates
+## 10. Next improvement candidates
 
 The next candidates should preserve the macro route first.
 
@@ -347,7 +475,7 @@ These should be attempted only after the baseline and robustness changes are
 measured, because the fixed route is currently the main source of Jet's
 strength.
 
-## 10. Documentation and provenance
+## 11. Documentation and provenance
 
 Keep the public-route origin explicit in the repository and preserve any
 required attribution or license notices from the original public source.

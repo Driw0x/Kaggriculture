@@ -3,12 +3,12 @@ import statistics
 
 from kaggle_environments import make
 
-import src.agents.jet3 as agent1_module
-import src.agents.jet5 as agent2_module
+import src.agents.jet5 as agent1_module
+import src.agents.jet6 as agent2_module
 
 
-AGENT1_NAME = "jet3"
-AGENT2_NAME = "jet5"
+AGENT1_NAME = "jet5"
+AGENT2_NAME = "jet6"
 SEEDS = tuple(range(100))
 CONFIGURATION = {"episodeSteps": 720}
 
@@ -38,6 +38,18 @@ fertilizer_telemetry = {
     "buys_modified": 0,
     "buys_removed": 0,
     "units_avoided": 0,
+}
+fertilizer_recovery_telemetry = {
+    "dead_collects_examined": 0,
+    "collection_routes_started": 0,
+    "collections_advanced": 0,
+    "fertilizer_units_recovered": 0,
+}
+early_sale_telemetry = {
+    "opportunities": 0,
+    "orders_added": 0,
+    "units_offered": 0,
+    "full_market_skips": 0,
 }
 
 match = 0
@@ -78,6 +90,10 @@ for seed in SEEDS:
                 errors[name][key] += value
         for key, value in agent2_module._JET5_FERTILIZER_TELEMETRY.items():
             fertilizer_telemetry[key] += int(value)
+        for key, value in agent2_module._JET6_FERTILIZER_RECOVERY_TELEMETRY.items():
+            fertilizer_recovery_telemetry[key] += int(value)
+        for key, value in agent2_module._JET6_EARLY_SALE_TELEMETRY.items():
+            early_sale_telemetry[key] += int(value)
 
         print(
             f"Match {match:03d} seed={seed} {AGENT1_NAME}_seat={agent1_seat}: "
@@ -88,6 +104,10 @@ for seed in SEEDS:
 differences = [
     reward2 - reward1
     for reward1, reward2 in zip(agent1_rewards, agent2_rewards)
+]
+seed_differences = [
+    sum(differences[index:index + 2])
+    for index in range(0, len(differences), 2)
 ]
 print()
 print(
@@ -107,7 +127,16 @@ print(
 print(
     f"Paired difference ({AGENT2_NAME}-{AGENT1_NAME}): "
     f"mean={statistics.mean(differences):+.2f} "
+    f"relative={statistics.mean(differences) / statistics.mean(agent1_rewards) * 100:+.2f}% "
     f"min={min(differences):+.2f} max={max(differences):+.2f}"
+)
+print(
+    "Seeds: "
+    f"positive={sum(value > 0 for value in seed_differences)} "
+    f"negative={sum(value < 0 for value in seed_differences)} "
+    f"neutral={sum(value == 0 for value in seed_differences)}"
 )
 print(f"Errors: {errors}")
 print(f"Fertilizer telemetry: {fertilizer_telemetry}")
+print(f"Fertilizer recovery telemetry: {fertilizer_recovery_telemetry}")
+print(f"Early-sale telemetry: {early_sale_telemetry}")
