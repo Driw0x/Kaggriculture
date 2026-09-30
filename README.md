@@ -8,8 +8,17 @@ Kaggriculture is a turn-based strategy competition where participants
 develop autonomous agents to manage farms, resources, production, and
 market interactions.
 
-The objective of this repository is to develop, evaluate, and
-iteratively improve an agent for the competition.
+The objective of this repository was to develop, evaluate, and iteratively improve agents for the competition.
+
+## Project Status
+
+This repository is now a **closed project snapshot**. The retained outcomes are:
+
+- **Heuristic planner:** `chi14.py` is the last validated implementation of the rebuilt heuristic branch. `heuristic_ideas_v4` and `heuristic_ideas_final` remain design-only references; later implementation attempts, including `CHI16` / `chi_final`, were not retained as validated successors.
+- **Learning agent:** Behavioral Cloning and the hybrid executor are preserved as an experimental track, but the learning agent was not retained for autonomous competition use.
+- **Public-derived branch:** `jet6.py` (Public Agent 10) is the final retained local baseline of that branch.
+
+No `CHI16` or `chi_final` source agent is part of the final repository state.
 
 ## Repository Map
 
@@ -67,20 +76,22 @@ pip install -r requirements.txt
   infrastructure, workers, town shops, and market behavior.
 
 * [`docs/chi_agents.md`](docs/chi_agents.md) ---
-  CHI heuristic-planner family, strategy evolution, economic planning,
-  execution improvements, and validation history.
+  Original CHI heuristic-planner lineage through CHI10 and the temporal experiment.
+
+* [`docs/heuristic_agents.md`](docs/heuristic_agents.md) ---
+  Rebuilt heuristic-planner branch from CHI12 to the final retained CHI14 implementation,
+  plus the archived v4/final design-only continuation.
 
 * [`docs/learning_agent.md`](docs/learning_agent.md) ---
-  Learning-based agent architecture, expert replay dataset, imitation
-  learning, and reinforcement learning roadmap.
+  Learning-based experimental track, offline results, autonomous evaluation,
+  and the decision not to retain it for further development.
 
-* [`docs/jet_agents.md`](docs/jet_agents.md) ---
-  Jet public-route agent family, runtime safeguards, market experiments,
-  and incremental route-based improvements.
+* [`docs/public_agent.md`](docs/public_agent.md) ---
+  Public-derived/reference agent families, provenance, local benchmarks, rejected
+  experiments, and the final retained Public Agent 10 baseline.
 
-* [`docs/ye_agents.md`](docs/ye_agents.md) ---
-  Ye V58 public agent reference and Ye1 execution, robustness, and
-  final-money improvements.
+* [`docs/agent_ideas.md`](docs/agent_ideas.md) ---
+  Historical inventory of agent ideas and their implementation status.
 
 
 ## License

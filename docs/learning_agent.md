@@ -641,4 +641,4 @@ Final decision:
 
 The learning-based autonomous agent is not retained for further development. Despite encouraging offline validation metrics, autonomous results are less stable and lower than those of the deterministic heuristic agent.
 
-The learning implementation and results are kept as an experimental track, while development continues with the heuristic agent.
+The learning implementation and results are kept as an experimental track. The project is now closed; no further learning-agent or heuristic-agent development is implied by this document.
