@@ -1,5 +1,10 @@
 # Kaggriculture — Game Mechanics Reference
 
+[English](game_mechanics_reference.md) | [Français](game_mechanics_reference.fr.md) | [简体中文](game_mechanics_reference.zh-CN.md)
+
+[Project README](../README.md)
+
+
 Quick reference for the main mechanics, costs, production rates, market behavior, and constraints useful for agent development.
 
 ---

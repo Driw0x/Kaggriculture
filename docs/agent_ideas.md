@@ -1,5 +1,10 @@
 # Agent Ideas
 
+[English](agent_ideas.md) | [Français](agent_ideas.fr.md) | [简体中文](agent_ideas.zh-CN.md)
+
+[Project README](../README.md)
+
+
 ## 1. State Memory
 
 Maintain an internal memory of persistent farm states so the agent can

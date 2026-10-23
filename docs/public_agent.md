@@ -1,5 +1,10 @@
 # Public Agents
 
+[English](public_agent.md) | [Français](public_agent.fr.md) | [简体中文](public_agent.zh-CN.md)
+
+[Project README](../README.md)
+
+
 This document groups only the Kaggriculture agents that belong to the public-derived
 or public-reference line retained in the repository.
 

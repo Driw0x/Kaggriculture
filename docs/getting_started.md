@@ -1,5 +1,10 @@
 # Kaggriculture: Getting Started
 
+[English](getting_started.md) | [Français](getting_started.fr.md) | [简体中文](getting_started.zh-CN.md)
+
+[Project README](../README.md)
+
+
 This guide walks you through building an agent, testing it locally, and submitting it to the Kaggriculture competition on Kaggle.
 
 For full game rules, the crop / animal / shop tables, the price function, and turn-processing order, see [game_rules.md](game_rules.md).

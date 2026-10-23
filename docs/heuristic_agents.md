@@ -1,5 +1,10 @@
 # Heuristic Agents
 
+[English](heuristic_agents.md) | [Français](heuristic_agents.fr.md) | [简体中文](heuristic_agents.zh-CN.md)
+
+[Project README](../README.md)
+
+
 This document complements [chi_agents.md](./chi_agents.md).
 
 `chi_agents.md` describes the historical CHI lineage from the initial fixed opening to

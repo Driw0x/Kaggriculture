@@ -1,5 +1,10 @@
 # CHI Agents — `chi.py` to `chi10.py`
 
+[English](chi_agents.md) | [Français](chi_agents.fr.md) | [简体中文](chi_agents.zh-CN.md)
+
+[Project README](../README.md)
+
+
 > Scope: original CHI heuristic-planner lineage only. Public-derived and post-CHI10 experiments are documented separately in `public_agent.md`.
 This document describes the successive versions of the Kaggriculture
 heuristic planner based on the implemented agents.

@@ -1,5 +1,10 @@
 # Heuristic Ideas v1 — Corrected Daily Planner
 
+[English](heuristic_ideas_v1.md) | [Français](heuristic_ideas_v1.fr.md) | [简体中文](heuristic_ideas_v1.zh-CN.md)
+
+[Project README](../../README.md)
+
+
 [Previous version: none](#) · [Next version →](./heuristic_ideas_v2.md)
 
 > **Series convention**

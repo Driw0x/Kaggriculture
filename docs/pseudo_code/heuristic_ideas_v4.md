@@ -1,5 +1,10 @@
 # Heuristic Ideas v4 — Market-Aware Tactical Strategy
 
+[English](heuristic_ideas_v4.md) | [Français](heuristic_ideas_v4.fr.md) | [简体中文](heuristic_ideas_v4.zh-CN.md)
+
+[Project README](../../README.md)
+
+
 [← Previous version](./heuristic_ideas_v3.md) · [Final consolidated version →](./heuristic_ideas_final.md)
 
 > **Series convention**

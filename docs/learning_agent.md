@@ -1,5 +1,10 @@
 # Learning Agent
 
+[English](learning_agent.md) | [Français](learning_agent.fr.md) | [简体中文](learning_agent.zh-CN.md)
+
+[Project README](../README.md)
+
+
 ## 1. Objective
 
 The learning agent is an experimental alternative to the deterministic heuristic agent.

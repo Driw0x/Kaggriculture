@@ -1,5 +1,10 @@
 # Heuristic Ideas v3 — Unified Optimized Planner
 
+[English](heuristic_ideas_v3.md) | [Français](heuristic_ideas_v3.fr.md) | [简体中文](heuristic_ideas_v3.zh-CN.md)
+
+[Project README](../../README.md)
+
+
 [← Previous version](./heuristic_ideas_v2.md) · [Next version →](./heuristic_ideas_v4.md)
 
 > **Series convention**

@@ -1,5 +1,10 @@
 # Heuristic Ideas v2 — Planned Land Expansion
 
+[English](heuristic_ideas_v2.md) | [Français](heuristic_ideas_v2.fr.md) | [简体中文](heuristic_ideas_v2.zh-CN.md)
+
+[Project README](../../README.md)
+
+
 [← Previous version](./heuristic_ideas_v1.md) · [Next version →](./heuristic_ideas_v3.md)
 
 > **Series convention**

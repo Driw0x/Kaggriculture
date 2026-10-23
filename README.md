@@ -1,5 +1,8 @@
 # Kaggriculture
 
+[English](README.md) | [Français](README.fr.md) | [简体中文](README.zh-CN.md)
+
+
 AI agent developed for the Kaggriculture competition on Kaggle.
 
 ## Competition
@@ -99,3 +102,13 @@ pip install -r requirements.txt
 This project is licensed under the Apache License 2.0.
 
 See [`LICENSE`](LICENSE) for details.
+
+<!-- multilingual-documentation -->
+
+## Additional documentation
+
+- [docs/pseudo_code/heuristic_ideas_final.md](docs/pseudo_code/heuristic_ideas_final.md)
+- [docs/pseudo_code/heuristic_ideas_v1.md](docs/pseudo_code/heuristic_ideas_v1.md)
+- [docs/pseudo_code/heuristic_ideas_v2.md](docs/pseudo_code/heuristic_ideas_v2.md)
+- [docs/pseudo_code/heuristic_ideas_v3.md](docs/pseudo_code/heuristic_ideas_v3.md)
+- [docs/pseudo_code/heuristic_ideas_v4.md](docs/pseudo_code/heuristic_ideas_v4.md)

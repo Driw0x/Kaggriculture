@@ -1,5 +1,10 @@
 # Kaggriculture Game Rules
 
+[English](game_rules.md) | [Français](game_rules.fr.md) | [简体中文](game_rules.zh-CN.md)
+
+[Project README](../README.md)
+
+
 This document contains the game mechanics and rules used as a reference
 during the development of the Kaggriculture agent.
 

@@ -1,5 +1,10 @@
 # Heuristic Ideas — Final Consolidated Strategy
 
+[English](heuristic_ideas_final.md) | [Français](heuristic_ideas_final.fr.md) | [简体中文](heuristic_ideas_final.zh-CN.md)
+
+[Project README](../../README.md)
+
+
 [← Previous design delta](./heuristic_ideas_v4.md) · Final consolidated version
 
 > **Series convention**
